@@ -45,9 +45,14 @@ describe("dispatcher regressions (PR #1 review)", () => {
     await cloud.close();
   });
 
-  function build(offlineAfterSeconds = 30) {
+  function build(offlineAfterSeconds = 30, labelDeferred = true) {
     return createApp({
-      config: testConfig({ localRunner: local.url, cloudRunner: cloud.url, offlineAfterSeconds }),
+      config: testConfig({
+        localRunner: local.url,
+        cloudRunner: cloud.url,
+        offlineAfterSeconds,
+        labelDeferred,
+      }),
       db,
       paperclip,
       logger: silent,
@@ -248,6 +253,44 @@ describe("dispatcher regressions (PR #1 review)", () => {
     await Promise.all([a, b, c]);
     expect(paperclip.wakes).toHaveLength(4);
     expect(paperclip.maxInFlightWakes).toBeLessThanOrEqual(2); // drainConcurrency
+  });
+
+  it("recovers a stranded claim through tick after a restart, with nothing else pending", async () => {
+    persistDeferred(db, {
+      runId: "run-stranded",
+      issueId: "issue-stranded",
+      agentId: "agent_inbox",
+      companyId: "c",
+      tier: "private",
+      reason: "test",
+      payload: {},
+      createdAt: clock.now.toISOString(),
+    });
+    // The previous process claimed the row and died mid-wake.
+    db.prepare(`UPDATE deferred SET status = 'waking', claimed_at = ?`).run(
+      clock.now.toISOString(),
+    );
+
+    // "Restart": a fresh app over the same database. The node comes back while the
+    // claim is still leased, so the transition drain finds nothing pending.
+    const { app, tick } = build(600);
+    await presence(app);
+    expect(paperclip.wakes).toHaveLength(0);
+
+    // Later, still no new transition: the ticker alone must recover the claim.
+    clock.now = new Date(clock.now.getTime() + WAKE_CLAIM_LEASE_MS + 1_000);
+    await presence(app);
+    await tick();
+    expect(paperclip.wakes).toHaveLength(1);
+    expect(paperclip.wakes[0]?.idempotencyKey).toBe("ebbgate-defer-run-stranded");
+  });
+
+  it("does not label deferred issues unless labelDeferred is on, but always comments", async () => {
+    const { app } = build(30, false);
+    const res = await run(app, runPayload({ runId: "run-nolabel", agentId: "agent_inbox" }));
+    expect(res.status).toBe(202);
+    expect(paperclip.comments).toHaveLength(1);
+    expect(paperclip.labels).toHaveLength(0);
   });
 
   it("releases wake claims abandoned by a crash after the lease expires", async () => {

@@ -83,6 +83,13 @@ export const configSchema = z
         apiUrl: z.url(),
         apiKey: z.string().min(1),
         sharedSecret: secretSchema,
+        /**
+         * Also add a `waiting-for-local` label to deferred issues. Off by default:
+         * Paperclip can only replace an issue's whole label set and offers no
+         * conditional update, so a label written by someone else at the same moment
+         * could be lost. The deferral comment (append-only) is always posted.
+         */
+        labelDeferred: z.boolean().default(false),
       })
       .strict(),
     agents: z.record(z.string().min(1), z.object({ tier: tierSchema }).strict()).default({}),

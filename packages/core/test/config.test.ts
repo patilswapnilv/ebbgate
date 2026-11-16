@@ -54,6 +54,9 @@ describe("loading the example config", () => {
     const config = parseConfig(baseRaw([privateLocal, defaultCloud]));
     expect(config.server.port).toBe(8790);
     expect(config.agents).toEqual({});
+    expect(config.paperclip.labelDeferred).toBe(false);
+    expect(config.server.host).toBe("127.0.0.1");
+    expect(config.server.maxBodyBytes).toBe(1024 * 1024);
     expect(config.presence).toEqual({
       offlineAfterSeconds: 90,
       drainConcurrency: 2,

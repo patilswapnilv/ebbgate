@@ -94,7 +94,9 @@ export function runRoutes(): Hono<AppEnv> {
             task.issueId,
             "Ebbgate: deferred until a local node is available (waiting-for-local).",
           );
-          await paperclip.addLabel(task.issueId, "waiting-for-local");
+          if (config.paperclip.labelDeferred) {
+            await paperclip.addLabel(task.issueId, "waiting-for-local");
+          }
         } catch (err) {
           logger.warn({ err: String(err) }, "paperclip defer annotations failed");
         }

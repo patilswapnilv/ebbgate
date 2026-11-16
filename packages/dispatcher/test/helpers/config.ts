@@ -4,6 +4,7 @@ export function testConfig(args: {
   localRunner: string;
   cloudRunner: string;
   offlineAfterSeconds?: number;
+  labelDeferred?: boolean;
 }): EbbgateConfig {
   return parseConfig(
     {
@@ -20,6 +21,7 @@ export function testConfig(args: {
         apiUrl: "http://127.0.0.1:3100",
         apiKey: "pc-test-key-not-a-secret-value",
         sharedSecret: "shared-secret-0123456789abcdef",
+        labelDeferred: args.labelDeferred ?? true,
       },
       agents: {
         agent_inbox: { tier: "private" },

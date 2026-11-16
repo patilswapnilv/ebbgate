@@ -19,6 +19,9 @@ paperclip:
   apiUrl: http://paperclip:3100
   apiKey: "${PAPERCLIP_API_KEY}"
   sharedSecret: "${EG_PAPERCLIP_SECRET}"
+  # Also label deferred issues `waiting-for-local`. Off by default: Paperclip replaces
+  # an issue's whole label set on update, so a concurrent label change could be lost.
+  labelDeferred: false
 
 # Tier is decided here, never by the caller. Unknown agents are treated as private.
 agents:

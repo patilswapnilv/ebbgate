@@ -14,7 +14,12 @@ import type { Db } from "../db/index.js";
 import type { Logger } from "../logger.js";
 import type { PaperclipClient } from "../paperclip/types.js";
 import type { Notifier } from "./notifier.js";
-import { countPendingDeferred, drainDeferred, persistDeferred } from "./queue.js";
+import {
+  countPendingDeferred,
+  drainDeferred,
+  persistDeferred,
+  releaseStaleClaims,
+} from "./queue.js";
 import { forwardToRunner } from "./runner.js";
 import {
   claimInterruptedRuns,
@@ -214,7 +219,9 @@ export function createPresenceService(deps: {
               run.issue_id,
               "Ebbgate: local node dropped; deferred until a local node returns (waiting-for-local).",
             );
-            await paperclip.addLabel(run.issue_id, "waiting-for-local");
+            if (config.paperclip.labelDeferred) {
+              await paperclip.addLabel(run.issue_id, "waiting-for-local");
+            }
           } catch (err) {
             logger.warn({ err: String(err) }, "paperclip notify on re-defer failed");
           }
@@ -339,9 +346,13 @@ export function createPresenceService(deps: {
         if (applied === 1) await transition(id, row.state, next);
       }
 
-      // Retry wakes that failed earlier, without waiting for another transition.
+      // Retry wakes that failed earlier, and recover claims abandoned by a crash,
+      // without waiting for another transition. Expired claims are released here
+      // first, so a stranded `waking` row is retried even when nothing else is pending.
       const anyAvailable = listNodeStatuses().some((n) => n.state === "available");
-      if (anyAvailable && countPendingDeferred(db) > 0) await drain();
+      if (!anyAvailable) return;
+      releaseStaleClaims(db, now());
+      if (countPendingDeferred(db) > 0) await drain();
     },
   };
 }
