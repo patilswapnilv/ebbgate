@@ -4,8 +4,9 @@ import type { AppEnv } from "../app-types.js";
 import { bearerMatches } from "../auth.js";
 import { ParseError } from "../paperclip/parse.js";
 import { persistDeferred } from "../services/queue.js";
+import { relayResponse } from "../services/relay.js";
 import { forwardToRunner } from "../services/runner.js";
-import { insertRunning, markRunStatus, recordDecision } from "../services/runs.js";
+import { finishRun, insertRunning, recordDecision } from "../services/runs.js";
 
 export function runRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -31,6 +32,17 @@ export function runRoutes(): Hono<AppEnv> {
     const notifier = c.get("notifier");
     const now = c.get("now");
     const fetchFn = c.get("fetch");
+
+    /**
+     * Record the runner's outcome, unless interruption recovery already took the
+     * run over (the update is conditional on the run still being `running`).
+     */
+    const settle = (runId: string, status: number): void => {
+      const outcome = status >= 200 && status < 300 ? "completed" : "failed";
+      if (!finishRun(db, runId, outcome, now().toISOString())) {
+        logger.info({ runId, status }, "late runner response ignored; run was already re-decided");
+      }
+    };
 
     let input: ReturnType<typeof paperclip.parseRun>;
     try {
@@ -114,18 +126,10 @@ export function runRoutes(): Hono<AppEnv> {
       });
       try {
         const result = await forwardToRunner(config.cloud.runner, body, c.req.raw.headers, fetchFn);
-        markRunStatus(
-          db,
-          task.runId,
-          result.status >= 200 && result.status < 300 ? "completed" : "failed",
-          now().toISOString(),
-        );
-        return new Response(result.body, {
-          status: result.status,
-          headers: { "content-type": result.headers.get("content-type") ?? "application/json" },
-        });
+        settle(task.runId, result.status);
+        return relayResponse(result);
       } catch (err) {
-        markRunStatus(db, task.runId, "failed", now().toISOString());
+        finishRun(db, task.runId, "failed", now().toISOString());
         logger.error({ err: String(err) }, "cloud forward failed");
         return c.json({ error: "cloud runner unreachable" }, 502);
       }
@@ -150,18 +154,12 @@ export function runRoutes(): Hono<AppEnv> {
     });
     try {
       const result = await forwardToRunner(runnerUrl, body, c.req.raw.headers, fetchFn);
-      markRunStatus(
-        db,
-        task.runId,
-        result.status >= 200 && result.status < 300 ? "completed" : "failed",
-        now().toISOString(),
-      );
-      return new Response(result.body, {
-        status: result.status,
-        headers: { "content-type": result.headers.get("content-type") ?? "application/json" },
-      });
+      settle(task.runId, result.status);
+      return relayResponse(result);
     } catch (err) {
-      markRunStatus(db, task.runId, "failed", now().toISOString());
+      if (!finishRun(db, task.runId, "failed", now().toISOString())) {
+        logger.info({ runId: task.runId }, "local forward ended after the run was interrupted");
+      }
       logger.error({ err: String(err) }, "local forward failed");
       return c.json({ error: "local runner unreachable" }, 502);
     }

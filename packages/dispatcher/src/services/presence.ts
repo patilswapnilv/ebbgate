@@ -7,14 +7,22 @@ import {
   type PresenceReport,
   type PresenceState,
   resolveTier,
+  type TaskContext,
+  type Tier,
 } from "@ebbgate/core";
 import type { Db } from "../db/index.js";
 import type { Logger } from "../logger.js";
 import type { PaperclipClient } from "../paperclip/types.js";
 import type { Notifier } from "./notifier.js";
-import { drainDeferred, persistDeferred } from "./queue.js";
+import { countPendingDeferred, drainDeferred, persistDeferred } from "./queue.js";
 import { forwardToRunner } from "./runner.js";
-import { insertRunning, listRunningOnNode, markRunStatus, recordDecision } from "./runs.js";
+import {
+  claimInterruptedRuns,
+  finishRun,
+  insertRunning,
+  type RunRow,
+  recordDecision,
+} from "./runs.js";
 
 export interface NodeRow {
   id: string;
@@ -29,6 +37,8 @@ export interface PresenceService {
   applyReport(report: PresenceReport): Promise<void>;
   setMode(nodeId: string, mode: PresenceMode): Promise<void>;
   tick(): Promise<void>;
+  /** Drain the deferred queue now. Concurrent calls share one serialized drain. */
+  drain(): Promise<void>;
   listNodeStatuses(): NodeStatus[];
   ensureConfiguredNodes(): void;
 }
@@ -47,15 +57,11 @@ export function createPresenceService(deps: {
 
   function ensureConfiguredNodes(): void {
     const at = now().toISOString();
-    for (const id of Object.keys(config.nodes)) {
-      const existing = db.prepare(`SELECT id FROM nodes WHERE id = ?`).get(id);
-      if (!existing) {
-        db.prepare(
-          `INSERT INTO nodes (id, state, mode, last_seen_at, report_json, updated_at)
-           VALUES (?, 'offline', 'auto', NULL, NULL, ?)`,
-        ).run(id, at);
-      }
-    }
+    const insert = db.prepare(
+      `INSERT OR IGNORE INTO nodes (id, state, mode, last_seen_at, report_json, updated_at)
+       VALUES (?, 'offline', 'auto', NULL, NULL, ?)`,
+    );
+    for (const id of Object.keys(config.nodes)) insert.run(id, at);
   }
 
   function readRow(id: string): NodeRow | undefined {
@@ -71,13 +77,43 @@ export function createPresenceService(deps: {
     const report = row.report_json
       ? ({ ...JSON.parse(row.report_json), mode: row.mode } as PresenceReport)
       : null;
-    return {
-      node: row.id,
-      state: row.state,
-      lastSeenAt: row.last_seen_at,
-      report,
-    };
+    return { node: row.id, state: row.state, lastSeenAt: row.last_seen_at, report };
   }
+
+  /* ---------------------------------------------------------------- */
+  /* Deferred queue: one drain at a time                               */
+  /* ---------------------------------------------------------------- */
+
+  let draining: Promise<void> | null = null;
+  let drainRequested = false;
+
+  function drain(): Promise<void> {
+    drainRequested = true;
+    if (draining) return draining;
+    draining = (async () => {
+      try {
+        while (drainRequested) {
+          drainRequested = false;
+          await drainDeferred({
+            db,
+            paperclip,
+            notifier,
+            logger,
+            now: now(),
+            deferredMaxAgeHours: config.presence.deferredMaxAgeHours,
+            drainConcurrency: config.presence.drainConcurrency,
+          });
+        }
+      } finally {
+        draining = null;
+      }
+    })();
+    return draining;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* State transitions                                                 */
+  /* ---------------------------------------------------------------- */
 
   async function transition(
     nodeId: string,
@@ -86,30 +122,48 @@ export function createPresenceService(deps: {
   ): Promise<void> {
     if (prev === next) return;
 
-    if ((prev === "offline" || prev === "busy") && next === "available") {
-      await notifier.notify("node_online", nodeId, `node ${nodeId} is available`);
-      await drainDeferred({
-        db,
-        paperclip,
-        notifier,
-        logger,
-        now: now(),
-        deferredMaxAgeHours: config.presence.deferredMaxAgeHours,
-        drainConcurrency: config.presence.drainConcurrency,
-      });
+    if (next === "offline") {
+      // Claim the affected attempts synchronously, before any await, so runs
+      // accepted after the node recovers can never be swept up by this transition.
+      const interrupted = claimInterruptedRuns(db, nodeId, now().toISOString());
+      await notifier.notify("node_offline", nodeId, `node ${nodeId} went offline`);
+      await recoverInterruptedRuns(nodeId, interrupted);
+      return;
     }
 
-    if (prev === "available" && next === "offline") {
-      await notifier.notify("node_offline", nodeId, `node ${nodeId} went offline`);
-      await handleInterruptedRuns(nodeId);
+    if (next === "available") {
+      await notifier.notify("node_online", nodeId, `node ${nodeId} is available`);
+      await drain();
     }
   }
 
-  async function handleInterruptedRuns(nodeId: string): Promise<void> {
-    const running = listRunningOnNode(db, nodeId);
-    for (const run of running) {
-      const finishedAt = now().toISOString();
-      markRunStatus(db, run.run_id, "interrupted", finishedAt);
+  /** Labels and tier for a recovered run, parsed exactly as ingress does. Fails closed. */
+  function recoveryTask(run: RunRow, payload: unknown): TaskContext {
+    let labels: string[] = [];
+    let tier: Tier = resolveTier(run.agent_id, config);
+    try {
+      labels = paperclip.parseRun(payload, new Headers()).labels;
+    } catch (err) {
+      // Without labels we cannot know whether a label rule (e.g. local-files)
+      // applies, so treat the task as private: it can wait, but never leak.
+      logger.warn(
+        { runId: run.run_id, err: String(err) },
+        "could not re-parse stored payload; treating as private",
+      );
+      tier = "private";
+    }
+    return {
+      runId: run.run_id,
+      agentId: run.agent_id,
+      companyId: run.company_id,
+      ...(run.issue_id ? { issueId: run.issue_id } : {}),
+      tier,
+      labels,
+    };
+  }
+
+  async function recoverInterruptedRuns(nodeId: string, runs: RunRow[]): Promise<void> {
+    for (const run of runs) {
       await notifier.notify(
         "run_interrupted",
         nodeId,
@@ -124,28 +178,20 @@ export function createPresenceService(deps: {
         continue;
       }
 
-      const tier = resolveTier(run.agent_id, config);
-      const task = {
-        runId: run.run_id,
-        agentId: run.agent_id,
-        companyId: run.company_id,
-        ...(run.issue_id ? { issueId: run.issue_id } : {}),
-        tier,
-        labels: [],
-      };
-
-      // Re-decide with this node offline (other nodes may still be up).
+      const task = recoveryTask(run, payload);
+      // Re-decide with the current view of every node (the dropped one is offline).
       const nodes = listNodeStatuses().map((n) =>
         n.node === nodeId ? { ...n, state: "offline" as const } : n,
       );
       const decision = decide(task, nodes, config);
+      const decidedAt = now().toISOString();
       recordDecision(db, {
         runId: run.run_id,
         agentId: run.agent_id,
         ...(run.issue_id ? { issueId: run.issue_id } : {}),
-        tier,
+        tier: task.tier,
         decision,
-        decidedAt: finishedAt,
+        decidedAt,
       });
 
       if (decision.action === "defer") {
@@ -154,10 +200,10 @@ export function createPresenceService(deps: {
           ...(run.issue_id ? { issueId: run.issue_id } : {}),
           agentId: run.agent_id,
           companyId: run.company_id,
-          tier,
+          tier: task.tier,
           reason: decision.reason,
           payload,
-          createdAt: finishedAt,
+          createdAt: decidedAt,
         });
         if (decision.notify) {
           await notifier.notify("task_deferred", nodeId, `re-deferred ${run.run_id}`);
@@ -173,64 +219,63 @@ export function createPresenceService(deps: {
             logger.warn({ err: String(err) }, "paperclip notify on re-defer failed");
           }
         }
-      } else if (decision.action === "cloud") {
-        insertRunning(db, {
-          runId: `${run.run_id}:cloud`,
-          ...(run.issue_id ? { issueId: run.issue_id } : {}),
-          agentId: run.agent_id,
-          companyId: run.company_id,
-          target: "cloud",
-          startedAt: finishedAt,
-          payload,
-        });
-        try {
-          await forwardToRunner(config.cloud.runner, payload, new Headers(), fetchFn);
-          markRunStatus(db, `${run.run_id}:cloud`, "completed", now().toISOString());
-        } catch (err) {
-          logger.warn({ err: String(err) }, "cloud re-forward failed");
-          markRunStatus(db, `${run.run_id}:cloud`, "failed", now().toISOString());
+        continue;
+      }
+
+      const replacementId = `${run.run_id}:${decision.action}`;
+      const runnerUrl =
+        decision.action === "cloud" ? config.cloud.runner : config.nodes[decision.node]?.runner;
+      if (!runnerUrl) {
+        logger.error({ runId: run.run_id }, "no runner configured for re-decided target");
+        continue;
+      }
+      insertRunning(db, {
+        runId: replacementId,
+        ...(run.issue_id ? { issueId: run.issue_id } : {}),
+        agentId: run.agent_id,
+        companyId: run.company_id,
+        target: decision.action,
+        ...(decision.action === "local"
+          ? { nodeId: decision.node, priority: decision.priority }
+          : {}),
+        startedAt: decidedAt,
+        payload,
+      });
+      try {
+        const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn);
+        const ok = result.status >= 200 && result.status < 300;
+        if (!ok) {
+          logger.warn(
+            { runId: replacementId, status: result.status },
+            "replacement runner returned an error",
+          );
         }
-      } else if (decision.action === "local") {
-        insertRunning(db, {
-          runId: `${run.run_id}:local`,
-          ...(run.issue_id ? { issueId: run.issue_id } : {}),
-          agentId: run.agent_id,
-          companyId: run.company_id,
-          target: "local",
-          nodeId: decision.node,
-          priority: decision.priority,
-          startedAt: finishedAt,
-          payload,
-        });
-        const runner = config.nodes[decision.node]?.runner;
-        if (runner) {
-          try {
-            await forwardToRunner(runner, payload, new Headers(), fetchFn);
-            markRunStatus(db, `${run.run_id}:local`, "completed", now().toISOString());
-          } catch (err) {
-            logger.warn({ err: String(err) }, "local re-forward failed");
-            markRunStatus(db, `${run.run_id}:local`, "failed", now().toISOString());
-          }
-        }
+        finishRun(db, replacementId, ok ? "completed" : "failed", now().toISOString());
+      } catch (err) {
+        logger.warn({ err: String(err), runId: replacementId }, "replacement forward failed");
+        finishRun(db, replacementId, "failed", now().toISOString());
       }
     }
   }
 
+  /**
+   * Write a node's presence and derive its state. Read, derive and write are a
+   * single synchronous block (no await in between), so no other writer can
+   * interleave; only then is the transition handled.
+   */
   async function writeState(
     nodeId: string,
     mode: PresenceMode,
     lastSeenAt: string | null,
     report: PresenceReport | null,
   ): Promise<void> {
-    const prev = readRow(nodeId);
-    const prevState: PresenceState = prev?.state ?? "offline";
+    const prevState: PresenceState = readRow(nodeId)?.state ?? "offline";
     const nextState = deriveState(
       report ? { ...report, mode } : null,
       lastSeenAt,
       now(),
       config.presence.offlineAfterSeconds,
     );
-    const at = now().toISOString();
     db.prepare(
       `INSERT INTO nodes (id, state, mode, last_seen_at, report_json, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -240,18 +285,24 @@ export function createPresenceService(deps: {
          last_seen_at = excluded.last_seen_at,
          report_json = excluded.report_json,
          updated_at = excluded.updated_at`,
-    ).run(nodeId, nextState, mode, lastSeenAt, report ? JSON.stringify(report) : null, at);
+    ).run(
+      nodeId,
+      nextState,
+      mode,
+      lastSeenAt,
+      report ? JSON.stringify(report) : null,
+      now().toISOString(),
+    );
     await transition(nodeId, prevState, nextState);
   }
 
   return {
     ensureConfiguredNodes,
     listNodeStatuses,
+    drain,
 
     async applyReport(report: PresenceReport): Promise<void> {
-      if (!config.nodes[report.node]) {
-        throw new Error(`unknown node: ${report.node}`);
-      }
+      if (!config.nodes[report.node]) throw new Error(`unknown node: ${report.node}`);
       await writeState(report.node, report.mode, now().toISOString(), report);
     },
 
@@ -265,9 +316,12 @@ export function createPresenceService(deps: {
     },
 
     async tick(): Promise<void> {
-      const rows = db.prepare(`SELECT * FROM nodes`).all() as NodeRow[];
-      for (const row of rows) {
-        if (config.nodes[row.id] === undefined) continue;
+      for (const id of Object.keys(config.nodes)) {
+        // Re-read each row right before using it: earlier iterations await, and a
+        // heartbeat may have landed in between. The conditional UPDATE only applies
+        // if the row still has the heartbeat and state this decision was based on.
+        const row = readRow(id);
+        if (!row) continue;
         const report = row.report_json ? (JSON.parse(row.report_json) as PresenceReport) : null;
         const next = deriveState(
           report ? { ...report, mode: row.mode } : null,
@@ -275,15 +329,19 @@ export function createPresenceService(deps: {
           now(),
           config.presence.offlineAfterSeconds,
         );
-        if (next !== row.state) {
-          db.prepare(`UPDATE nodes SET state = ?, updated_at = ? WHERE id = ?`).run(
-            next,
-            now().toISOString(),
-            row.id,
-          );
-          await transition(row.id, row.state, next);
-        }
+        if (next === row.state) continue;
+        const applied = db
+          .prepare(
+            `UPDATE nodes SET state = ?, updated_at = ?
+             WHERE id = ? AND state = ? AND last_seen_at IS ?`,
+          )
+          .run(next, now().toISOString(), id, row.state, row.last_seen_at).changes;
+        if (applied === 1) await transition(id, row.state, next);
       }
+
+      // Retry wakes that failed earlier, without waiting for another transition.
+      const anyAvailable = listNodeStatuses().some((n) => n.state === "available");
+      if (anyAvailable && countPendingDeferred(db) > 0) await drain();
     },
   };
 }

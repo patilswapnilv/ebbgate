@@ -53,7 +53,16 @@ export const configSchema = z
     server: z
       .object({
         port: z.number().int().min(1).max(65535).default(8790),
+        /** Bind address. Loopback by default; use 0.0.0.0 inside a container. */
+        host: z.string().min(1).default("127.0.0.1"),
         publicUrl: z.url(),
+        /** Largest request body the dispatcher will read, in bytes. */
+        maxBodyBytes: z
+          .number()
+          .int()
+          .min(1024)
+          .max(16 * 1024 * 1024)
+          .default(1024 * 1024),
       })
       .strict(),
     nodes: z

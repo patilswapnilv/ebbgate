@@ -75,18 +75,38 @@ export function insertRunning(
   );
 }
 
-export function markRunStatus(db: Db, runId: string, status: RunStatus, finishedAt: string): void {
-  db.prepare(`UPDATE runs SET status = ?, finished_at = ? WHERE run_id = ?`).run(
-    status,
-    finishedAt,
-    runId,
-  );
+/**
+ * Finish a run, but only if it is still `running`. Returns false when another
+ * path (for example interruption recovery) already moved it on, so a late
+ * response can never overwrite an `interrupted` status.
+ */
+export function finishRun(
+  db: Db,
+  runId: string,
+  status: Exclude<RunStatus, "running">,
+  finishedAt: string,
+): boolean {
+  const res = db
+    .prepare(`UPDATE runs SET status = ?, finished_at = ? WHERE run_id = ? AND status = 'running'`)
+    .run(status, finishedAt, runId);
+  return res.changes === 1;
 }
 
-export function listRunningOnNode(db: Db, nodeId: string): RunRow[] {
-  return db
-    .prepare(`SELECT * FROM runs WHERE status = 'running' AND node_id = ?`)
-    .all(nodeId) as RunRow[];
+/**
+ * Atomically mark every run still `running` on a node as `interrupted` and
+ * return exactly those rows. Runs accepted later (after the node recovers)
+ * are never touched by this call.
+ */
+export function claimInterruptedRuns(db: Db, nodeId: string, at: string): RunRow[] {
+  return db.transaction(() => {
+    const rows = db
+      .prepare(`SELECT * FROM runs WHERE status = 'running' AND node_id = ?`)
+      .all(nodeId) as RunRow[];
+    const mark = db.prepare(
+      `UPDATE runs SET status = 'interrupted', finished_at = ? WHERE run_id = ? AND status = 'running'`,
+    );
+    return rows.filter((r) => mark.run(at, r.run_id).changes === 1);
+  })();
 }
 
 export function listRecentDecisions(db: Db, limit = 50): unknown[] {

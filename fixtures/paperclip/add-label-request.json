@@ -1,5 +1,11 @@
 {
-  "_comment": "TODO(verify-paperclip): exact label CRUD REST paths. Assumed: GET/POST /api/companies/{companyId}/labels, then PATCH /api/issues/{issueId} with labelIds (create fields accepted as partials).",
+  "_comment": "Label flow. Issue objects carry companyId and labelIds; PATCH /api/issues/{id} labelIds replaces the full set (server syncs issue_labels), so Ebbgate sends existing + new. Company labels: GET/POST /api/companies/{companyId}/labels. TODO(verify-paperclip): no documented concurrency check (ETag/If-Match/version) for issue PATCH.",
+  "getIssuePath": "/api/issues/{issueId}",
+  "getIssueResponse": {
+    "id": "issue-123",
+    "companyId": "company-1",
+    "labelIds": ["label-uuid-existing"]
+  },
   "listLabelsPath": "/api/companies/{companyId}/labels",
   "createLabelPath": "/api/companies/{companyId}/labels",
   "createLabelBody": {
@@ -7,6 +13,6 @@
     "color": "#64748b"
   },
   "patchIssueBody": {
-    "labelIds": ["label-uuid-for-waiting-for-local"]
+    "labelIds": ["label-uuid-existing", "label-uuid-for-waiting-for-local"]
   }
 }

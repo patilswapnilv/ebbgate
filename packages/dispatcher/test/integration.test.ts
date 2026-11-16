@@ -41,6 +41,14 @@ describe("dispatcher integration (§10)", () => {
     });
   }
 
+  function runStatus(runId: string): string | undefined {
+    return (
+      db.prepare(`SELECT status FROM runs WHERE run_id = ?`).get(runId) as
+        | { status: string }
+        | undefined
+    )?.status;
+  }
+
   async function reportPresence(app: ReturnType<typeof createApp>["app"]): Promise<Response> {
     return app.request("/presence", {
       method: "POST",
@@ -128,34 +136,32 @@ describe("dispatcher integration (§10)", () => {
     expect(wakesForB).toHaveLength(1);
     expect(countPendingDeferred(db)).toBe(0);
 
-    // 5. Available + in-flight local run → drop node → interrupted → internal re-decides to cloud.
-    const inflight = await postRun(
+    // 5. In-flight local run whose response is still pending when the node drops.
+    local.hold();
+    const inflight = postRun(
       app,
       runPayload({ runId: "run-inflight", agentId: "agent_ops", issueId: "issue-c" }),
     );
-    expect(inflight.status).toBe(200);
-    expect(local.hits).toHaveLength(2);
-
-    // Mark the run still "running" as if the forward had not finished yet.
-    db.prepare(`UPDATE runs SET status = 'running', finished_at = NULL WHERE run_id = ?`).run(
-      "run-inflight",
-    );
+    await local.waitForHits(2);
+    expect(runStatus("run-inflight")).toBe("running");
 
     clock.now = new Date(clock.now.getTime() + 31_000);
     await tick();
 
-    const interrupted = db
-      .prepare(`SELECT status FROM runs WHERE run_id = ?`)
-      .get("run-inflight") as { status: string };
-    expect(interrupted.status).toBe("interrupted");
-
-    // Internal offline → cloud.
-    expect(cloud.hits.length).toBeGreaterThanOrEqual(1);
+    // Interrupted and re-decided while the original forward is still open.
+    expect(runStatus("run-inflight")).toBe("interrupted");
     const cloudHit = cloud.hits.find(
       (h) =>
         h !== null && typeof h === "object" && (h as { runId?: string }).runId === "run-inflight",
     );
     expect(cloudHit).toBeTruthy();
+    expect(runStatus("run-inflight:cloud")).toBe("completed");
+
+    // The late original response is relayed but cannot overwrite the interrupted state.
+    local.release();
+    const late = await inflight;
+    expect(late.status).toBe(200);
+    expect(runStatus("run-inflight")).toBe("interrupted");
   });
 
   it("never forwards a private task to the cloud runner", async () => {

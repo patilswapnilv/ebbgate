@@ -1,5 +1,4 @@
 import { Writable } from "node:stream";
-import pino from "pino";
 import { describe, expect, it } from "vitest";
 import { createLogger } from "../src/logger.js";
 
@@ -13,30 +12,8 @@ describe("log redaction", () => {
       },
     });
 
-    // Use the same redact paths as createLogger, writing to our capture stream.
-    const logger = pino(
-      {
-        level: "info",
-        redact: {
-          paths: [
-            "token",
-            "apiKey",
-            "sharedSecret",
-            "botToken",
-            "authorization",
-            "headers.authorization",
-            "*.token",
-            "*.apiKey",
-            "*.sharedSecret",
-            "*.botToken",
-            "notify.telegram.botToken",
-            "*.telegram.botToken",
-          ],
-          censor: "[Redacted]",
-        },
-      },
-      stream,
-    );
+    // Exercise the dispatcher's own logger, so removing its redaction fails this test.
+    const logger = createLogger("info", stream);
 
     const secret = "shared-secret-0123456789abcdef";
     const apiKey = "pc-super-secret-api-key-zzzz";

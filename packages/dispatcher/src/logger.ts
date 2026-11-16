@@ -1,4 +1,4 @@
-import pino, { type Logger } from "pino";
+import pino, { type DestinationStream, type Logger } from "pino";
 
 /** Paths that must never appear in log output (tokens, keys, secrets). */
 const REDACT_PATHS = [
@@ -20,14 +20,13 @@ const REDACT_PATHS = [
   "*.telegram.botToken",
 ];
 
-export function createLogger(level = "info"): Logger {
-  return pino({
-    level,
-    redact: {
-      paths: REDACT_PATHS,
-      censor: "[Redacted]",
-    },
-  });
+/**
+ * The dispatcher's logger. `destination` is for tests that need to capture
+ * output; production writes to stdout.
+ */
+export function createLogger(level = "info", destination?: DestinationStream): Logger {
+  const options = { level, redact: { paths: REDACT_PATHS, censor: "[Redacted]" } };
+  return destination ? pino(options, destination) : pino(options);
 }
 
 export type { Logger };

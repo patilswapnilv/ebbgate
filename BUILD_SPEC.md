@@ -122,7 +122,9 @@ type Decision =
 ```yaml
 server:
   port: 8790
+  host: 127.0.0.1          # bind address; 0.0.0.0 inside a container
   publicUrl: http://cloud:8790
+  maxBodyBytes: 1048576    # larger request bodies get HTTP 413
 
 nodes:
   mini: { runner: http://mini:8787, token: ${EG_NODE_MINI_TOKEN} }
