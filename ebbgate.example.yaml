@@ -1,0 +1,54 @@
+# Ebbgate example config. Copy to ebbgate.yaml and set the env vars it references.
+# Rules are first-match. Private tasks can never be routed to the cloud:
+# a config that could do so is rejected at startup.
+
+server:
+  port: 8790
+  publicUrl: http://cloud:8790
+
+nodes:
+  mini: { runner: http://mini:8787, token: "${EG_NODE_MINI_TOKEN}" }
+  mbp: { runner: http://mbp:8787, token: "${EG_NODE_MBP_TOKEN}", prefer: true }
+
+cloud:
+  runner: http://openclaw:18789/paperclip # cloud runtime target (TODO(verify-paperclip): path)
+
+paperclip:
+  apiUrl: http://paperclip:3100
+  apiKey: "${PAPERCLIP_API_KEY}"
+  sharedSecret: "${EG_PAPERCLIP_SECRET}"
+
+# Tier is decided here, never by the caller. Unknown agents are treated as private.
+agents:
+  agent_inbox: { tier: private }
+  agent_finance: { tier: private }
+  agent_ops: { tier: internal }
+  agent_research: { tier: public }
+
+policies:
+  - match: { label: local-files }
+    available: local
+    busy: local-low
+    offline: defer
+    notify: true
+  - match: { tier: private }
+    available: local
+    busy: local-low
+    offline: defer
+  - match: { tier: internal }
+    available: local
+    busy: cloud
+    offline: cloud
+  - default:
+      available: cloud
+      busy: cloud
+      offline: cloud
+
+presence:
+  offlineAfterSeconds: 90
+  drainConcurrency: 2
+  deferredMaxAgeHours: 72
+
+notify:
+  telegram: { botToken: "${TG_BOT_TOKEN}", chatId: "${TG_CHAT_ID}" }
+  webhook: { url: "${EG_NOTIFY_WEBHOOK}" }
