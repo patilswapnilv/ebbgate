@@ -1,0 +1,12 @@
+{
+  "_comment": "TODO(verify-paperclip): exact label CRUD REST paths. Assumed: GET/POST /api/companies/{companyId}/labels, then PATCH /api/issues/{issueId} with labelIds (create fields accepted as partials).",
+  "listLabelsPath": "/api/companies/{companyId}/labels",
+  "createLabelPath": "/api/companies/{companyId}/labels",
+  "createLabelBody": {
+    "name": "waiting-for-local",
+    "color": "#64748b"
+  },
+  "patchIssueBody": {
+    "labelIds": ["label-uuid-for-waiting-for-local"]
+  }
+}

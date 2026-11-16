@@ -1,0 +1,11 @@
+{
+  "_comment": "POST /api/agents/{agentId}/wakeup — confirmed by docs.paperclip.ing/reference/api/agents/",
+  "source": "on_demand",
+  "triggerDetail": "system",
+  "reason": "ebbgate: local node available; draining deferred queue",
+  "payload": {
+    "issueId": "issue-123"
+  },
+  "idempotencyKey": "ebbgate-defer-issue-123",
+  "forceFreshSession": false
+}
