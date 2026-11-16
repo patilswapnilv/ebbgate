@@ -1,0 +1,13 @@
+---
+description: Ebbgate build rules — always follow BUILD_SPEC.md
+alwaysApply: true
+---
+
+- `BUILD_SPEC.md` in the repo root is the source of truth. Read the relevant sections before writing code.
+- Work one milestone at a time (spec §11). At the end of a milestone, stop and summarize: what was built, test results, open `TODO(verify-paperclip)` items, decisions made.
+- Status: M1 (`packages/core`) is done. Next is M2 (`packages/dispatcher`).
+- Invariants (spec §1): a `private` task never goes to the cloud; an unknown tier is `private`; a deferred task is persisted before responding; secrets never appear in logs or responses.
+- Reuse `@ebbgate/core` (`loadConfig`, `decide`, `deriveState`, `resolveTier`). Keep `packages/core` free of I/O.
+- Never invent Paperclip API shapes. Check docs.paperclip.ing; otherwise write an interface + fixture in `fixtures/paperclip/` + `TODO(verify-paperclip)`.
+- No dependencies outside spec §2 without asking.
+- Before finishing: `pnpm lint && pnpm typecheck && pnpm test && pnpm build` must all pass.
