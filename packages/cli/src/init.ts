@@ -237,7 +237,8 @@ Next steps:
   1. Copy .env.example → .env and fill PAPERCLIP_API_KEY + the secrets above
   2. Start the dispatcher:  node packages/dispatcher/dist/index.js
      (or: docker compose -f examples/compose/docker-compose.yml up)
-  3. On each Mac node:  pnpm ebbgate agent install --node <id> --dispatcher ${answers.publicUrl} --config ./ebbgate.yaml --runner-host <reachable IP>
+  3. On each Mac node, put only that node's token in ~/.ebbgate/.env (chmod 600), then:
+     pnpm ebbgate agent install --node <id> --dispatcher ${answers.publicUrl} --config ./ebbgate.yaml --env-file ~/.ebbgate/.env --runner-host <reachable IP>
   4. On each Mac node:  pnpm ebbgate runner   # local shim on :8787
 `;
 

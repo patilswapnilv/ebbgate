@@ -30,6 +30,16 @@ Paperclip is not started by default (image/tag still `TODO(verify-paperclip)`). 
 
 ## 3. Local node (Mac)
 
+A node needs exactly one secret: its own token. Put it in a node-only env file that only you can read. The agent never needs the dispatcher's Paperclip key or notifier tokens.
+
+```bash
+mkdir -p ~/.ebbgate
+grep '^EG_NODE_MINI_TOKEN=' examples/compose/.env > ~/.ebbgate/.env
+chmod 600 ~/.ebbgate/.env
+```
+
+Both the launchd daemon and `ebbgate runner` read this file, so they work from a fresh shell and after a reboot. Values in your shell environment take precedence over it. `agent install` stores only the file's path in the launchd job, never the token, and refuses to install if the token can't be found there.
+
 ```bash
 # from the repo root
 pnpm install && pnpm build
@@ -37,6 +47,7 @@ pnpm ebbgate agent install \
   --node mini \
   --dispatcher http://127.0.0.1:8790 \
   --config examples/compose/ebbgate.yaml \
+  --env-file ~/.ebbgate/.env \
   --runner-host 0.0.0.0
 
 # stable runner endpoint the dispatcher calls via host.docker.internal:8787
