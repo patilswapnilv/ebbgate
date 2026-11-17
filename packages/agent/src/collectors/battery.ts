@@ -1,12 +1,16 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { COLLECTOR_EXEC_OPTIONS } from "./limits.js";
 
 const execFileAsync = promisify(execFile);
 
 /** True when drawing from battery (not AC). Desktop Macs without battery → false. */
 export async function onBattery(exec: typeof execFileAsync = execFileAsync): Promise<boolean> {
   try {
-    const { stdout } = await exec("pmset", ["-g", "batt"], { encoding: "utf8" });
+    const { stdout } = await exec("pmset", ["-g", "batt"], {
+      encoding: "utf8",
+      ...COLLECTOR_EXEC_OPTIONS,
+    });
     return parseOnBattery(stdout);
   } catch {
     return false;

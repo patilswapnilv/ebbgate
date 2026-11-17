@@ -1,12 +1,16 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { COLLECTOR_EXEC_OPTIONS } from "./limits.js";
 
 const execFileAsync = promisify(execFile);
 
 /** User idle time in seconds from HIDIdleTime (nanoseconds in ioreg). */
 export async function userIdleSeconds(exec: typeof execFileAsync = execFileAsync): Promise<number> {
   try {
-    const { stdout } = await exec("ioreg", ["-c", "IOHIDSystem"], { encoding: "utf8" });
+    const { stdout } = await exec("ioreg", ["-c", "IOHIDSystem"], {
+      encoding: "utf8",
+      ...COLLECTOR_EXEC_OPTIONS,
+    });
     return parseHidIdleSeconds(stdout);
   } catch {
     return 0;

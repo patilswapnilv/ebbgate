@@ -19,4 +19,10 @@ export const DEFAULT_RUNNER_PORT = 8787;
 export const DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789/paperclip";
 export const DEFAULT_DISPATCHER_URL = "http://127.0.0.1:8790";
 export const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
+/**
+ * Runner shim bind address. Loopback by default; set EBBGATE_RUNNER_HOST (or
+ * `--runner-host` at install) to 0.0.0.0 or a private/VPN IP so a dispatcher on
+ * another machine can reach http://<node>:8787.
+ */
+export const DEFAULT_RUNNER_HOST = "127.0.0.1";
 export const AGENT_VERSION = "0.0.0";

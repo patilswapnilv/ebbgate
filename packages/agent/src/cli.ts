@@ -28,6 +28,7 @@ async function main(argv: string[]): Promise<void> {
         ...(opts.dispatcher ? { dispatcherUrl: opts.dispatcher } : {}),
         ...(opts.gateway ? { gatewayUrl: opts.gateway } : {}),
         ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(opts.runnerHost ? { runnerHost: opts.runnerHost } : {}),
       });
       console.log(`installed launch agent → ${result.plistPath}`);
       console.log(`node=${node}`);
@@ -67,9 +68,18 @@ async function main(argv: string[]): Promise<void> {
     );
     const server = await startRunnerShim({
       port,
+      host: config.runnerHost,
       gatewayUrl: config.gatewayUrl,
     });
-    console.error(`ebbgate runner listening on :${port} → ${config.gatewayUrl}`);
+    console.error(
+      `ebbgate runner listening on ${config.runnerHost}:${port} → ${config.gatewayUrl}`,
+    );
+    if (config.runnerHost === "127.0.0.1" || config.runnerHost === "localhost") {
+      console.error(
+        "ebbgate runner: bound to loopback; a dispatcher on another machine cannot reach it. " +
+          "Set EBBGATE_RUNNER_HOST (e.g. your VPN/Tailscale IP or 0.0.0.0).",
+      );
+    }
     await new Promise<void>((resolvePromise) => {
       server.on("close", () => resolvePromise());
     });
@@ -84,8 +94,15 @@ function parseFlags(args: string[]): {
   dispatcher?: string;
   gateway?: string;
   config?: string;
+  runnerHost?: string;
 } {
-  const out: { node?: string; dispatcher?: string; gateway?: string; config?: string } = {};
+  const out: {
+    node?: string;
+    dispatcher?: string;
+    gateway?: string;
+    config?: string;
+    runnerHost?: string;
+  } = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const next = args[i + 1];
@@ -97,6 +114,9 @@ function parseFlags(args: string[]): {
       i++;
     } else if (a === "--gateway" && next) {
       out.gateway = next;
+      i++;
+    } else if (a === "--runner-host" && next) {
+      out.runnerHost = next;
       i++;
     } else if (a === "--config" && next) {
       out.config = next;
@@ -111,6 +131,7 @@ function helpText(): string {
 
 Usage:
   ebbgate agent install --node <id> [--dispatcher URL] [--gateway URL] [--config PATH]
+                        [--runner-host HOST]
   ebbgate agent uninstall
   ebbgate agent run
   ebbgate busy on|off|auto

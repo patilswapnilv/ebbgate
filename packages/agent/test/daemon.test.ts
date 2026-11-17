@@ -10,6 +10,7 @@ function fakeConfig(): AgentRuntimeConfig {
     dispatcherUrl: "http://dispatcher.test",
     gatewayUrl: "http://gateway.test",
     runnerPort: 8787,
+    runnerHost: "127.0.0.1",
     ollamaUrl: "http://ollama.test",
     configPath: "/tmp/ebbgate.yaml",
     ebbgate: {} as AgentRuntimeConfig["ebbgate"],

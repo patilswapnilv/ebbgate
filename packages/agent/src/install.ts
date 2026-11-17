@@ -1,10 +1,25 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { readAgentLocalFile, writeAgentLocalFile, writeNodeId } from "./config.js";
-import { LAUNCH_AGENT_LABEL, LAUNCH_AGENT_PLIST } from "./paths.js";
+import {
+  type AgentLocalFile,
+  readAgentLocalFile,
+  resolveConfigPath,
+  writeAgentLocalFile,
+  writeNodeId,
+} from "./config.js";
+import {
+  DEFAULT_DISPATCHER_URL,
+  DEFAULT_GATEWAY_URL,
+  DEFAULT_OLLAMA_URL,
+  DEFAULT_RUNNER_HOST,
+  DEFAULT_RUNNER_PORT,
+  EBBGATE_DIR,
+  LAUNCH_AGENT_LABEL,
+  LAUNCH_AGENT_PLIST,
+} from "./paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,6 +28,7 @@ export interface InstallOptions {
   dispatcherUrl?: string;
   gatewayUrl?: string;
   configPath?: string;
+  runnerHost?: string;
   /** Absolute path to the node binary that should run the CLI. */
   nodeBin?: string;
   /** Absolute path to packages/agent/dist/cli.js */
@@ -27,11 +43,87 @@ export function defaultCliPath(): string {
   return fileURLToPath(new URL("./cli.js", import.meta.url));
 }
 
+/** Everything the installed daemon needs, resolved once at install time. */
+export interface InstallSettings {
+  configPath: string;
+  dispatcherUrl: string;
+  gatewayUrl: string;
+  ollamaUrl: string;
+  runnerHost: string;
+  runnerPort: number;
+}
+
+/**
+ * Resolve the settings to persist. Precedence for each value:
+ * explicit option -> installing shell's environment -> existing local file -> default.
+ * The config path is made absolute, so launchd never depends on the shell's cwd.
+ */
+export function resolveInstallSettings(
+  opts: Pick<InstallOptions, "configPath" | "dispatcherUrl" | "gatewayUrl" | "runnerHost">,
+  env: NodeJS.ProcessEnv,
+  local: AgentLocalFile,
+): InstallSettings {
+  const configPath = opts.configPath ? resolve(opts.configPath) : resolveConfigPath(env, local); // EBBGATE_CONFIG -> saved path -> ./ebbgate.yaml -> ~/.ebbgate
+  return {
+    configPath,
+    dispatcherUrl: (
+      opts.dispatcherUrl ??
+      env.EBBGATE_DISPATCHER_URL ??
+      local.dispatcherUrl ??
+      DEFAULT_DISPATCHER_URL
+    ).replace(/\/$/, ""),
+    gatewayUrl:
+      opts.gatewayUrl ?? env.EBBGATE_GATEWAY_URL ?? local.gatewayUrl ?? DEFAULT_GATEWAY_URL,
+    ollamaUrl: (env.EBBGATE_OLLAMA_URL ?? local.ollamaUrl ?? DEFAULT_OLLAMA_URL).replace(/\/$/, ""),
+    runnerHost:
+      opts.runnerHost ?? env.EBBGATE_RUNNER_HOST ?? local.runnerHost ?? DEFAULT_RUNNER_HOST,
+    runnerPort: Number(env.EBBGATE_RUNNER_PORT ?? local.runnerPort ?? DEFAULT_RUNNER_PORT),
+  };
+}
+
+/** Environment the launchd job runs with: every resolved setting, explicitly. */
+export function launchAgentEnv(
+  node: string,
+  settings: InstallSettings,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const vars: Record<string, string> = {
+    EBBGATE_NODE: node,
+    EBBGATE_CONFIG: settings.configPath,
+    EBBGATE_DISPATCHER_URL: settings.dispatcherUrl,
+    EBBGATE_GATEWAY_URL: settings.gatewayUrl,
+    EBBGATE_OLLAMA_URL: settings.ollamaUrl,
+    EBBGATE_RUNNER_HOST: settings.runnerHost,
+    EBBGATE_RUNNER_PORT: String(settings.runnerPort),
+    PATH: env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+  };
+  if (env.HOME) vars.HOME = env.HOME;
+  return vars;
+}
+
+/** The plist the installer writes: resolved settings, explicit env, fixed working directory. */
+export function buildLaunchAgentPlist(args: {
+  node: string;
+  settings: InstallSettings;
+  env: NodeJS.ProcessEnv;
+  nodeBin: string;
+  cliPath: string;
+}): string {
+  return renderLaunchAgentPlist({
+    label: LAUNCH_AGENT_LABEL,
+    nodeBin: args.nodeBin,
+    cliPath: args.cliPath,
+    env: launchAgentEnv(args.node, args.settings, args.env),
+    workingDirectory: EBBGATE_DIR,
+  });
+}
+
 export function renderLaunchAgentPlist(args: {
   label: string;
   nodeBin: string;
   cliPath: string;
   env: Record<string, string>;
+  workingDirectory?: string;
 }): string {
   const envEntries = Object.entries(args.env)
     .map(([k, v]) => `    <key>${escapeXml(k)}</key>\n    <string>${escapeXml(v)}</string>`)
@@ -50,7 +142,7 @@ export function renderLaunchAgentPlist(args: {
     <string>agent</string>
     <string>run</string>
   </array>
-  <key>RunAtLoad</key>
+${args.workingDirectory ? `  <key>WorkingDirectory</key>\n  <string>${escapeXml(args.workingDirectory)}</string>\n` : ""}  <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
@@ -83,32 +175,16 @@ export async function installAgent(opts: InstallOptions): Promise<{ plistPath: s
   const cliPath = opts.cliPath ?? defaultCliPath();
   const env = opts.env ?? process.env;
 
-  writeNodeId(opts.node);
   const local = readAgentLocalFile();
-  writeAgentLocalFile({
-    ...local,
-    node: opts.node,
-    ...(opts.dispatcherUrl ? { dispatcherUrl: opts.dispatcherUrl } : {}),
-    ...(opts.gatewayUrl ? { gatewayUrl: opts.gatewayUrl } : {}),
-    ...(opts.configPath ? { configPath: opts.configPath } : {}),
-  });
+  // Resolve before writing anything: fails early (no half-install) if no config exists.
+  const settings = resolveInstallSettings(opts, env, local);
 
-  const envVars: Record<string, string> = {
-    EBBGATE_NODE: opts.node,
-    PATH: env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
-  };
-  if (opts.dispatcherUrl) envVars.EBBGATE_DISPATCHER_URL = opts.dispatcherUrl;
-  if (opts.gatewayUrl) envVars.EBBGATE_GATEWAY_URL = opts.gatewayUrl;
-  if (opts.configPath) envVars.EBBGATE_CONFIG = opts.configPath;
-  if (env.HOME) envVars.HOME = env.HOME;
+  writeNodeId(opts.node);
+  writeAgentLocalFile({ ...local, node: opts.node, ...settings });
 
-  const xml = renderLaunchAgentPlist({
-    label: LAUNCH_AGENT_LABEL,
-    nodeBin,
-    cliPath,
-    env: envVars,
-  });
+  const xml = buildLaunchAgentPlist({ node: opts.node, settings, env, nodeBin, cliPath });
 
+  mkdirSync(EBBGATE_DIR, { recursive: true });
   mkdirSync(dirname(plistPath), { recursive: true });
   writeFileSync(plistPath, xml, { mode: 0o644 });
 

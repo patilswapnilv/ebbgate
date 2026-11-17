@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { promisify } from "node:util";
+import { COLLECTOR_EXEC_OPTIONS } from "./limits.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -10,7 +11,7 @@ const execFileAsync = promisify(execFile);
  */
 export async function freeRamGb(exec: typeof execFileAsync = execFileAsync): Promise<number> {
   try {
-    const { stdout } = await exec("vm_stat", [], { encoding: "utf8" });
+    const { stdout } = await exec("vm_stat", [], { encoding: "utf8", ...COLLECTOR_EXEC_OPTIONS });
     const pageSize = parsePageSize(stdout) ?? 16384;
     const free = pages(stdout, "Pages free");
     const inactive = pages(stdout, "Pages inactive");

@@ -5,6 +5,7 @@ import {
   AGENT_CONFIG_FILE,
   DEFAULT_DISPATCHER_URL,
   DEFAULT_GATEWAY_URL,
+  DEFAULT_RUNNER_HOST,
   EBBGATE_DIR,
   NODE_FILE,
 } from "./paths.js";
@@ -15,6 +16,7 @@ export interface AgentRuntimeConfig {
   dispatcherUrl: string;
   gatewayUrl: string;
   runnerPort: number;
+  runnerHost: string;
   ollamaUrl: string;
   /** Absolute path to the ebbgate.yaml used for tokens / nodes. */
   configPath: string;
@@ -26,6 +28,7 @@ export interface AgentLocalFile {
   dispatcherUrl?: string;
   gatewayUrl?: string;
   runnerPort?: number;
+  runnerHost?: string;
   ollamaUrl?: string;
   configPath?: string;
 }
@@ -97,6 +100,7 @@ export function loadAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentRun
 
   const gatewayUrl = env.EBBGATE_GATEWAY_URL ?? local.gatewayUrl ?? DEFAULT_GATEWAY_URL;
   const runnerPort = Number(env.EBBGATE_RUNNER_PORT ?? local.runnerPort ?? 8787);
+  const runnerHost = env.EBBGATE_RUNNER_HOST ?? local.runnerHost ?? DEFAULT_RUNNER_HOST;
   const ollamaUrl = (env.EBBGATE_OLLAMA_URL ?? local.ollamaUrl ?? "http://127.0.0.1:11434").replace(
     /\/$/,
     "",
@@ -108,6 +112,7 @@ export function loadAgentRuntime(env: NodeJS.ProcessEnv = process.env): AgentRun
     dispatcherUrl,
     gatewayUrl,
     runnerPort,
+    runnerHost,
     ollamaUrl,
     configPath,
     ebbgate,
