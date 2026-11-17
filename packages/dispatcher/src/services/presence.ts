@@ -203,7 +203,7 @@ export function createPresenceService(deps: {
     return recovering;
   }
 
-async function recoverRun(run: RunRow): Promise<void> {
+  async function recoverRun(run: RunRow): Promise<void> {
     const nodeId = run.node_id;
     await notifier.notify(
       "run_interrupted",
