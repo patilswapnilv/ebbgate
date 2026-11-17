@@ -276,6 +276,22 @@ export function parseConfig(
   return result.data;
 }
 
+/**
+ * Describe a YAML syntax error by code and position only. The parser's own
+ * message quotes the offending source line, which may hold a secret, so it is
+ * never passed through.
+ */
+function describeYamlError(err: unknown): string {
+  const e = err as { code?: unknown; linePos?: Array<{ line?: number; col?: number }> };
+  const code = typeof e?.code === "string" ? e.code : "SYNTAX_ERROR";
+  const pos = Array.isArray(e?.linePos) ? e.linePos[0] : undefined;
+  const where =
+    pos && typeof pos.line === "number" && typeof pos.col === "number"
+      ? ` at line ${pos.line}, column ${pos.col}`
+      : "";
+  return `YAML parse error (${code})${where}`;
+}
+
 /** Parse and validate a YAML config string. Throws `ConfigError`. */
 export function loadConfig(
   yamlText: string,
@@ -283,9 +299,9 @@ export function loadConfig(
 ): EbbgateConfig {
   let raw: unknown;
   try {
-    raw = parseYaml(yamlText);
+    raw = parseYaml(yamlText, { prettyErrors: false });
   } catch (err) {
-    throw new ConfigError([{ path: "", message: `YAML parse error: ${(err as Error).message}` }]);
+    throw new ConfigError([{ path: "", message: describeYamlError(err) }]);
   }
   return parseConfig(raw, env);
 }

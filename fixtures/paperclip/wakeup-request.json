@@ -7,5 +7,6 @@
     "issueId": "issue-123"
   },
   "idempotencyKey": "ebbgate-defer-run-123",
-  "forceFreshSession": false
+  "forceFreshSession": false,
+  "_todo": "TODO(verify-paperclip): idempotencyKey deduplication is NOT confirmed for the deployed Paperclip version (an upstream revision did not enforce it: paperclipai/paperclip#10412). Ebbgate sends one stable key per deferral on every retry, but do not rely on retry deduplication until it is verified against the running instance."
 }

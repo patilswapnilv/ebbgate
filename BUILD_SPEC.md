@@ -122,7 +122,9 @@ type Decision =
 ```yaml
 server:
   port: 8790
-  host: 127.0.0.1          # bind address; 0.0.0.0 inside a container
+  host: 0.0.0.0            # must be reachable at publicUrl by every node; default when
+                           # omitted is 127.0.0.1. Restrict with a firewall/VPN, or bind
+                           # a private (e.g. Tailscale) IP.
   publicUrl: http://cloud:8790
   maxBodyBytes: 1048576    # larger request bodies get HTTP 413
 

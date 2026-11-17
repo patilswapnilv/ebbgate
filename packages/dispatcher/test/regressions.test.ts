@@ -216,7 +216,7 @@ describe("dispatcher regressions (PR #1 review)", () => {
       paperclip,
       notifier: quietNotifier,
       logger: silent,
-      now: clock.now,
+      clock: () => clock.now,
       deferredMaxAgeHours: 72,
       drainConcurrency: 2,
     };
@@ -317,10 +317,13 @@ describe("dispatcher regressions (PR #1 review)", () => {
       drainConcurrency: 2,
     };
 
-    await drainDeferred({ ...args, now: new Date(clock.now.getTime() + 1_000) });
+    await drainDeferred({ ...args, clock: () => new Date(clock.now.getTime() + 1_000) });
     expect(paperclip.wakes).toHaveLength(0); // claim still held
 
-    await drainDeferred({ ...args, now: new Date(clock.now.getTime() + WAKE_CLAIM_LEASE_MS + 1) });
+    await drainDeferred({
+      ...args,
+      clock: () => new Date(clock.now.getTime() + WAKE_CLAIM_LEASE_MS + 1),
+    });
     expect(paperclip.wakes).toHaveLength(1);
     expect(paperclip.wakes[0]?.idempotencyKey).toBe("ebbgate-defer-run-crash");
   });
@@ -424,7 +427,9 @@ describe("server and startup", () => {
     const ids = (db.prepare(`SELECT id FROM schema_migrations`).all() as { id: string }[]).map(
       (r) => r.id,
     );
-    expect(ids).toEqual(expect.arrayContaining(["001_init.sql", "002_deferred_claims.sql"]));
+    expect(ids).toEqual(
+      expect.arrayContaining(["001_init.sql", "002_deferred_claims.sql", "003_run_recovery.sql"]),
+    );
     db.close();
   });
 

@@ -216,3 +216,22 @@ describe("deriveState", () => {
     );
   });
 });
+
+describe("YAML syntax errors", () => {
+  it("never quote the offending source (which may hold a secret)", () => {
+    const secret = "sk-live-SUPER-SECRET-0123456789";
+    const yaml = `server:\n  port: 8790\npaperclip:\n  apiKey: "${secret}\n  broken: [\n`;
+    try {
+      loadConfig(yaml, {});
+      throw new Error("expected a ConfigError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigError);
+      const text = `${(err as Error).message}\n${(err as Error).stack ?? ""}\n${JSON.stringify(
+        (err as ConfigError).issues,
+      )}`;
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain("SUPER-SECRET");
+      expect((err as ConfigError).issues[0]?.message).toMatch(/^YAML parse error \(\w+\)/);
+    }
+  });
+});

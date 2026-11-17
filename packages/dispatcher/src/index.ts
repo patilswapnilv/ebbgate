@@ -36,7 +36,10 @@ async function main(): Promise<void> {
     apiKey: config.paperclip.apiKey,
   });
 
-  const { app, tick } = createApp({ config, db, paperclip, logger });
+  const { app, tick, presence } = createApp({ config, db, paperclip, logger });
+
+  // Replay interruptions a previous process claimed but did not finish recovering.
+  await presence.recoverInterrupted();
 
   const ticker = setInterval(() => {
     void tick().catch((err: unknown) => {
@@ -56,9 +59,18 @@ async function main(): Promise<void> {
   );
 }
 
+/**
+ * Startup errors print the message only (no stack, no parser internals). Config
+ * errors are written without quoting config content, so no secret can leak here.
+ */
+export function formatStartupError(err: unknown): string {
+  if (err instanceof Error) return `ebbgate: ${err.message}`;
+  return "ebbgate: startup failed";
+}
+
 if (isEntrypoint(import.meta.url)) {
   main().catch((err: unknown) => {
-    console.error(err);
+    console.error(formatStartupError(err));
     process.exit(1);
   });
 }

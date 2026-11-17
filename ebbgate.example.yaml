@@ -4,7 +4,10 @@
 
 server:
   port: 8790
-  host: 127.0.0.1 # use 0.0.0.0 inside a container
+  # Presence agents on other machines must reach publicUrl. 0.0.0.0 listens on every
+  # interface: limit access with a firewall or VPN (e.g. bind your Tailscale IP instead).
+  # The built-in default, when host is omitted, is 127.0.0.1 (this machine only).
+  host: 0.0.0.0
   publicUrl: http://cloud:8790
   maxBodyBytes: 1048576 # requests larger than this get HTTP 413
 

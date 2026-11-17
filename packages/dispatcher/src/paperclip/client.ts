@@ -10,6 +10,20 @@ export interface HttpPaperclipOptions {
    */
   companyId?: string;
   fetch?: typeof fetch;
+  /** Per-request timeout in milliseconds (default 15 s). */
+  timeoutMs?: number;
+}
+
+/** Default bound for every Paperclip request, so a stalled call cannot hold a drain open. */
+export const PAPERCLIP_TIMEOUT_MS = 15_000;
+
+/** Release a response body we do not read, so the connection can be reused. */
+async function discard(res: Response): Promise<void> {
+  try {
+    await res.body?.cancel();
+  } catch {
+    // Already consumed or closed: nothing to release.
+  }
 }
 
 /**
@@ -35,7 +49,11 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
       ...extraHeaders,
     };
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    const init: RequestInit = { method, headers };
+    const init: RequestInit = {
+      method,
+      headers,
+      signal: AbortSignal.timeout(opts.timeoutMs ?? PAPERCLIP_TIMEOUT_MS),
+    };
     if (body !== undefined) init.body = JSON.stringify(body);
     return fetchFn(`${base}${path}`, init);
   }
@@ -62,6 +80,7 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
         `/api/agents/${encodeURIComponent(args.agentId)}/wakeup`,
         payload,
       );
+      await discard(res);
       if (!res.ok) {
         throw new Error(`paperclip wakeAgent failed: ${res.status}`);
       }
@@ -72,6 +91,7 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
       const res = await api("POST", `/api/issues/${encodeURIComponent(issueId)}/comments`, {
         body,
       });
+      await discard(res);
       if (!res.ok) {
         throw new Error(`paperclip commentOnIssue failed: ${res.status}`);
       }
@@ -105,7 +125,10 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
 
   async function getIssue(issueId: string): Promise<{ companyId?: string; labelIds: string[] }> {
     const res = await api("GET", `/api/issues/${encodeURIComponent(issueId)}`);
-    if (!res.ok) throw new Error(`paperclip get issue failed: ${res.status}`);
+    if (!res.ok) {
+      await discard(res);
+      throw new Error(`paperclip get issue failed: ${res.status}`);
+    }
     const raw = (await res.json()) as unknown;
     const obj = raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     const labelIds = Array.isArray(obj.labelIds)
@@ -125,7 +148,10 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
 
   async function resolveLabelId(companyId: string, label: string): Promise<string> {
     const listRes = await api("GET", `/api/companies/${encodeURIComponent(companyId)}/labels`);
-    if (!listRes.ok) throw new Error(`paperclip list labels failed: ${listRes.status}`);
+    if (!listRes.ok) {
+      await discard(listRes);
+      throw new Error(`paperclip list labels failed: ${listRes.status}`);
+    }
     const listed = (await listRes.json()) as unknown;
     const labels = Array.isArray(listed)
       ? listed
@@ -148,7 +174,10 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
       name: label,
       color: "#64748b",
     });
-    if (!createRes.ok) throw new Error(`paperclip create label failed: ${createRes.status}`);
+    if (!createRes.ok) {
+      await discard(createRes);
+      throw new Error(`paperclip create label failed: ${createRes.status}`);
+    }
     const created = (await createRes.json()) as { id?: unknown };
     if (typeof created.id !== "string") {
       throw new Error("paperclip create label response missing id");
@@ -160,6 +189,7 @@ export function createHttpPaperclipClient(opts: HttpPaperclipOptions): Paperclip
     const res = await api("PATCH", `/api/issues/${encodeURIComponent(issueId)}`, {
       labelIds: [...new Set(labelIds)],
     });
+    await discard(res);
     if (!res.ok) throw new Error(`paperclip addLabel patch failed: ${res.status}`);
   }
 }

@@ -25,6 +25,8 @@ import {
   claimInterruptedRuns,
   finishRun,
   insertRunning,
+  listUnrecoveredRuns,
+  markRecovered,
   type RunRow,
   recordDecision,
 } from "./runs.js";
@@ -44,6 +46,11 @@ export interface PresenceService {
   tick(): Promise<void>;
   /** Drain the deferred queue now. Concurrent calls share one serialized drain. */
   drain(): Promise<void>;
+  /**
+   * Re-decide every interrupted run whose recovery is not yet recorded. Called on
+   * the offline transition, at startup and on every tick; passes are serialized.
+   */
+  recoverInterrupted(): Promise<void>;
   listNodeStatuses(): NodeStatus[];
   ensureConfiguredNodes(): void;
 }
@@ -95,7 +102,10 @@ export function createPresenceService(deps: {
   function drain(): Promise<void> {
     drainRequested = true;
     if (draining) return draining;
-    draining = (async () => {
+    // Start on a later microtask, so `draining` is assigned before the pass can
+    // finish (a pass with no awaits would otherwise clear it first and leave a
+    // settled promise behind, silently disabling every later drain).
+    draining = Promise.resolve().then(async () => {
       try {
         while (drainRequested) {
           drainRequested = false;
@@ -104,7 +114,7 @@ export function createPresenceService(deps: {
             paperclip,
             notifier,
             logger,
-            now: now(),
+            clock: now,
             deferredMaxAgeHours: config.presence.deferredMaxAgeHours,
             drainConcurrency: config.presence.drainConcurrency,
           });
@@ -112,7 +122,7 @@ export function createPresenceService(deps: {
       } finally {
         draining = null;
       }
-    })();
+    });
     return draining;
   }
 
@@ -130,9 +140,10 @@ export function createPresenceService(deps: {
     if (next === "offline") {
       // Claim the affected attempts synchronously, before any await, so runs
       // accepted after the node recovers can never be swept up by this transition.
-      const interrupted = claimInterruptedRuns(db, nodeId, now().toISOString());
+      // Their recovery is tracked durably (recovered_at), so it survives a crash.
+      claimInterruptedRuns(db, nodeId, now().toISOString());
       await notifier.notify("node_offline", nodeId, `node ${nodeId} went offline`);
-      await recoverInterruptedRuns(nodeId, interrupted);
+      await recoverInterrupted();
       return;
     }
 
@@ -167,39 +178,63 @@ export function createPresenceService(deps: {
     };
   }
 
-  async function recoverInterruptedRuns(nodeId: string, runs: RunRow[]): Promise<void> {
-    for (const run of runs) {
-      await notifier.notify(
-        "run_interrupted",
-        nodeId,
-        `run ${run.run_id} interrupted on ${nodeId}`,
-      );
+  let recovering: Promise<void> | null = null;
+  let recoverRequested = false;
 
-      let payload: unknown;
+  function recoverInterrupted(): Promise<void> {
+    recoverRequested = true;
+    if (recovering) return recovering;
+    // Same pattern as drain(): start asynchronously so an empty pass cannot leave
+    // a settled promise in `recovering`.
+    recovering = Promise.resolve().then(async () => {
       try {
-        payload = JSON.parse(run.payload_json);
-      } catch {
-        logger.warn({ runId: run.run_id }, "interrupted run had invalid payload_json");
-        continue;
+        while (recoverRequested) {
+          recoverRequested = false;
+          for (const run of listUnrecoveredRuns(db)) await recoverRun(run);
+        }
+      } finally {
+        recovering = null;
       }
+    });
+    return recovering;
+  }
 
-      const task = recoveryTask(run, payload);
-      // Re-decide with the current view of every node (the dropped one is offline).
-      const nodes = listNodeStatuses().map((n) =>
-        n.node === nodeId ? { ...n, state: "offline" as const } : n,
-      );
-      const decision = decide(task, nodes, config);
-      const decidedAt = now().toISOString();
-      recordDecision(db, {
-        runId: run.run_id,
-        agentId: run.agent_id,
-        ...(run.issue_id ? { issueId: run.issue_id } : {}),
-        tier: task.tier,
-        decision,
-        decidedAt,
-      });
+  async function recoverRun(run: RunRow): Promise<void> {
+    const nodeId = run.node_id;
+    await notifier.notify(
+      "run_interrupted",
+      nodeId,
+      `run ${run.run_id} interrupted on ${nodeId ?? "unknown node"}`,
+    );
 
-      if (decision.action === "defer") {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(run.payload_json);
+    } catch {
+      logger.warn({ runId: run.run_id }, "interrupted run had invalid payload_json; not replayed");
+      markRecovered(db, run.run_id, now().toISOString());
+      return;
+    }
+
+    const task = recoveryTask(run, payload);
+    // Re-decide with the current view of every node (the dropped one is offline).
+    const nodes = listNodeStatuses().map((n) =>
+      n.node === nodeId ? { ...n, state: "offline" as const } : n,
+    );
+    const decision = decide(task, nodes, config);
+    const decidedAt = now().toISOString();
+
+    if (decision.action === "defer") {
+      // The deferred row and the recovery marker commit together.
+      db.transaction(() => {
+        recordDecision(db, {
+          runId: run.run_id,
+          agentId: run.agent_id,
+          ...(run.issue_id ? { issueId: run.issue_id } : {}),
+          tier: task.tier,
+          decision,
+          decidedAt,
+        });
         persistDeferred(db, {
           runId: `${run.run_id}:redecide`,
           ...(run.issue_id ? { issueId: run.issue_id } : {}),
@@ -210,32 +245,45 @@ export function createPresenceService(deps: {
           payload,
           createdAt: decidedAt,
         });
-        if (decision.notify) {
-          await notifier.notify("task_deferred", nodeId, `re-deferred ${run.run_id}`);
-        }
-        if (run.issue_id) {
-          try {
-            await paperclip.commentOnIssue(
-              run.issue_id,
-              "Ebbgate: local node dropped; deferred until a local node returns (waiting-for-local).",
-            );
-            if (config.paperclip.labelDeferred) {
-              await paperclip.addLabel(run.issue_id, "waiting-for-local");
-            }
-          } catch (err) {
-            logger.warn({ err: String(err) }, "paperclip notify on re-defer failed");
+        markRecovered(db, run.run_id, decidedAt);
+      })();
+      if (decision.notify) {
+        await notifier.notify("task_deferred", nodeId, `re-deferred ${run.run_id}`);
+      }
+      if (run.issue_id) {
+        try {
+          await paperclip.commentOnIssue(
+            run.issue_id,
+            "Ebbgate: local node dropped; deferred until a local node returns (waiting-for-local).",
+          );
+          if (config.paperclip.labelDeferred) {
+            await paperclip.addLabel(run.issue_id, "waiting-for-local");
           }
+        } catch (err) {
+          logger.warn({ err: String(err) }, "paperclip notify on re-defer failed");
         }
-        continue;
       }
+      return;
+    }
 
-      const replacementId = `${run.run_id}:${decision.action}`;
-      const runnerUrl =
-        decision.action === "cloud" ? config.cloud.runner : config.nodes[decision.node]?.runner;
-      if (!runnerUrl) {
-        logger.error({ runId: run.run_id }, "no runner configured for re-decided target");
-        continue;
-      }
+    const replacementId = `${run.run_id}:${decision.action}`;
+    const runnerUrl =
+      decision.action === "cloud" ? config.cloud.runner : config.nodes[decision.node]?.runner;
+    if (!runnerUrl) {
+      logger.error({ runId: run.run_id }, "no runner configured for re-decided target");
+      return; // left unrecovered: retried on the next pass once config is fixed
+    }
+
+    // The replacement run and the recovery marker commit together.
+    db.transaction(() => {
+      recordDecision(db, {
+        runId: run.run_id,
+        agentId: run.agent_id,
+        ...(run.issue_id ? { issueId: run.issue_id } : {}),
+        tier: task.tier,
+        decision,
+        decidedAt,
+      });
       insertRunning(db, {
         runId: replacementId,
         ...(run.issue_id ? { issueId: run.issue_id } : {}),
@@ -248,20 +296,22 @@ export function createPresenceService(deps: {
         startedAt: decidedAt,
         payload,
       });
-      try {
-        const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn);
-        const ok = result.status >= 200 && result.status < 300;
-        if (!ok) {
-          logger.warn(
-            { runId: replacementId, status: result.status },
-            "replacement runner returned an error",
-          );
-        }
-        finishRun(db, replacementId, ok ? "completed" : "failed", now().toISOString());
-      } catch (err) {
-        logger.warn({ err: String(err), runId: replacementId }, "replacement forward failed");
-        finishRun(db, replacementId, "failed", now().toISOString());
+      markRecovered(db, run.run_id, decidedAt);
+    })();
+
+    try {
+      const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn);
+      const ok = result.status >= 200 && result.status < 300;
+      if (!ok) {
+        logger.warn(
+          { runId: replacementId, status: result.status },
+          "replacement runner returned an error",
+        );
       }
+      finishRun(db, replacementId, ok ? "completed" : "failed", now().toISOString());
+    } catch (err) {
+      logger.warn({ err: String(err), runId: replacementId }, "replacement forward failed");
+      finishRun(db, replacementId, "failed", now().toISOString());
     }
   }
 
@@ -307,6 +357,7 @@ export function createPresenceService(deps: {
     ensureConfiguredNodes,
     listNodeStatuses,
     drain,
+    recoverInterrupted,
 
     async applyReport(report: PresenceReport): Promise<void> {
       if (!config.nodes[report.node]) throw new Error(`unknown node: ${report.node}`);
@@ -323,6 +374,9 @@ export function createPresenceService(deps: {
     },
 
     async tick(): Promise<void> {
+      // Pick up interrupted runs left unrecovered (for example by a crash).
+      if (listUnrecoveredRuns(db).length > 0) await recoverInterrupted();
+
       for (const id of Object.keys(config.nodes)) {
         // Re-read each row right before using it: earlier iterations await, and a
         // heartbeat may have landed in between. The conditional UPDATE only applies

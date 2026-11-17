@@ -105,33 +105,38 @@ export interface DrainResult {
 
 /**
  * Drain the deferred queue: expire old items, then wake agents (oldest first),
- * deduped per issueId, with at most `drainConcurrency` wakes in flight.
+ * one wake per issue, with at most `drainConcurrency` wakes in flight.
  *
- * Every row is claimed with a conditional update (`pending` -> `waking`) before
- * its wake is sent, so overlapping drains can never wake the same row twice.
- * Claims carry a timestamp and expire after WAKE_CLAIM_LEASE_MS; each retry
- * reuses the row's persisted idempotency key, so Paperclip can deduplicate a
- * wake whose outcome was unknown.
+ * - Every row is claimed with a conditional update (`pending` -> `waking`)
+ *   before its wake is sent, so overlapping drains can never wake a row twice.
+ * - Each claim is timestamped when it is acquired (`clock()` is read per claim),
+ *   so the lease measures how long that wake has been in flight.
+ * - Other pending rows for the same issue stay `pending` until the covering
+ *   wake succeeds; only then are they closed. If it fails, they remain retryable.
+ * - Every retry reuses the row's persisted idempotency key.
  */
 export async function drainDeferred(args: {
   db: Db;
   paperclip: PaperclipClient;
   notifier: Notifier;
   logger: Logger;
-  now: Date;
+  clock: () => Date;
   deferredMaxAgeHours: number;
   drainConcurrency: number;
 }): Promise<DrainResult> {
-  const { db, paperclip, notifier, logger, now, deferredMaxAgeHours, drainConcurrency } = args;
+  const { db, paperclip, notifier, logger, clock, deferredMaxAgeHours, drainConcurrency } = args;
   const result: DrainResult = { woken: 0, failed: 0, expired: 0 };
-  releaseStaleClaims(db, now);
+  const startedAt = clock();
+  releaseStaleClaims(db, startedAt);
 
   const maxAgeMs = deferredMaxAgeHours * 3600 * 1000;
   const toWake: DeferredRow[] = [];
-  const seenIssues = new Set<string>();
+  /** Pending rows covered by the wake of a primary row, keyed by the primary's id. */
+  const coveredBy = new Map<number, number[]>();
+  const primaryForIssue = new Map<string, number>();
 
   for (const row of listPendingDeferred(db)) {
-    const age = now.getTime() - new Date(row.created_at).getTime();
+    const age = startedAt.getTime() - new Date(row.created_at).getTime();
     if (age > maxAgeMs) {
       if (transitionPending(db, row.id, "expired")) {
         result.expired += 1;
@@ -145,20 +150,25 @@ export async function drainDeferred(args: {
     }
 
     const issueKey = row.issue_id ?? `run:${row.run_id}`;
-    if (seenIssues.has(issueKey)) {
-      // Dedupe per issue: one wake covers every deferral of the same issue.
-      transitionPending(db, row.id, "done");
+    const primary = primaryForIssue.get(issueKey);
+    if (primary !== undefined) {
+      coveredBy.get(primary)?.push(row.id);
       continue;
     }
-    seenIssues.add(issueKey);
+    primaryForIssue.set(issueKey, row.id);
+    coveredBy.set(row.id, []);
     toWake.push(row);
   }
+
+  const closeCovered = db.prepare(
+    `UPDATE deferred SET status = 'done' WHERE id = ? AND status = 'pending'`,
+  );
 
   for (let i = 0; i < toWake.length; i += drainConcurrency) {
     const batch = toWake.slice(i, i + drainConcurrency);
     await Promise.all(
       batch.map(async (row) => {
-        if (!transitionPending(db, row.id, "waking", now.toISOString())) return; // claimed elsewhere
+        if (!transitionPending(db, row.id, "waking", clock().toISOString())) return;
         try {
           await paperclip.wakeAgent({
             agentId: row.agent_id,
@@ -166,9 +176,12 @@ export async function drainDeferred(args: {
             reason: "ebbgate: local node available; draining deferred queue",
             idempotencyKey: row.wake_idempotency_key ?? wakeKeyFor(row.run_id),
           });
-          db.prepare(`UPDATE deferred SET status = 'done' WHERE id = ? AND status = 'waking'`).run(
-            row.id,
-          );
+          db.transaction(() => {
+            db.prepare(
+              `UPDATE deferred SET status = 'done' WHERE id = ? AND status = 'waking'`,
+            ).run(row.id);
+            for (const id of coveredBy.get(row.id) ?? []) closeCovered.run(id);
+          })();
           result.woken += 1;
         } catch (err) {
           result.failed += 1;

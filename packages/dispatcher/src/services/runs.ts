@@ -16,6 +16,7 @@ export interface RunRow {
   started_at: string;
   finished_at: string | null;
   payload_json: string;
+  recovered_at: string | null;
 }
 
 export function recordDecision(
@@ -107,6 +108,24 @@ export function claimInterruptedRuns(db: Db, nodeId: string, at: string): RunRow
     );
     return rows.filter((r) => mark.run(at, r.run_id).changes === 1);
   })();
+}
+
+/** Interrupted runs whose recovery has not been durably recorded (oldest first). */
+export function listUnrecoveredRuns(db: Db): RunRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM runs WHERE status = 'interrupted' AND recovered_at IS NULL
+       ORDER BY finished_at ASC, started_at ASC`,
+    )
+    .all() as RunRow[];
+}
+
+/** Record that an interrupted run's recovery has been written. */
+export function markRecovered(db: Db, runId: string, at: string): void {
+  db.prepare(`UPDATE runs SET recovered_at = ? WHERE run_id = ? AND recovered_at IS NULL`).run(
+    at,
+    runId,
+  );
 }
 
 export function listRecentDecisions(db: Db, limit = 50): unknown[] {
