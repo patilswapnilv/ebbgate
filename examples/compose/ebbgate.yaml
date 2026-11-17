@@ -1,0 +1,49 @@
+# Compose demo config. Tokens come from examples/compose/.env
+server:
+  port: 8790
+  host: 0.0.0.0
+  publicUrl: http://127.0.0.1:8790
+  maxBodyBytes: 1048576
+
+nodes:
+  # Point the host Mac runner shim here (publish 8787 on the host, or use host.docker.internal).
+  mini: { runner: http://host.docker.internal:8787, token: "${EG_NODE_MINI_TOKEN}", prefer: true }
+
+cloud:
+  # TODO(verify-paperclip): cloud OpenClaw path
+  runner: http://host.docker.internal:18789/paperclip
+
+paperclip:
+  apiUrl: http://host.docker.internal:3100
+  apiKey: "${PAPERCLIP_API_KEY}"
+  sharedSecret: "${EG_PAPERCLIP_SECRET}"
+  labelDeferred: false
+
+agents:
+  agent_inbox: { tier: private }
+  agent_ops: { tier: internal }
+  agent_research: { tier: public }
+
+policies:
+  - match: { label: local-files }
+    available: local
+    busy: local-low
+    offline: defer
+    notify: true
+  - match: { tier: private }
+    available: local
+    busy: local-low
+    offline: defer
+  - match: { tier: internal }
+    available: local
+    busy: cloud
+    offline: cloud
+  - default:
+      available: cloud
+      busy: cloud
+      offline: cloud
+
+presence:
+  offlineAfterSeconds: 90
+  drainConcurrency: 2
+  deferredMaxAgeHours: 72

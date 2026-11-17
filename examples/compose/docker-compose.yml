@@ -1,0 +1,74 @@
+# Ebbgate quickstart stack: dispatcher + LiteLLM (+ optional Paperclip).
+# From repo root:
+#   cp examples/compose/.env.example examples/compose/.env
+#   docker compose -f examples/compose/docker-compose.yml up --build
+#
+# Local Mac nodes still run outside Compose (from the repo root, after pnpm build):
+#   pnpm ebbgate agent install --node mini --dispatcher http://127.0.0.1:8790 \
+#     --config examples/compose/ebbgate.yaml
+#   pnpm ebbgate runner
+
+name: ebbgate
+
+services:
+  dispatcher:
+    build:
+      context: ../..
+      dockerfile: examples/compose/Dockerfile.dispatcher
+    # Presence agents on other machines reach the dispatcher here. Every endpoint
+    # except /healthz requires a token; restrict the port with a firewall or VPN.
+    ports:
+      - "8790:8790"
+    # host.docker.internal is built into Docker Desktop; native Linux Engine needs this.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      EBBGATE_CONFIG: /app/ebbgate.yaml
+      EBBGATE_DB: /data/ebbgate.db
+      LOG_LEVEL: info
+    volumes:
+      - ./ebbgate.yaml:/app/ebbgate.yaml:ro
+      - dispatcher-data:/data
+    depends_on:
+      litellm:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8790/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    # Published on this machine's loopback only, and every request needs the master
+    # key: the proxy can spend your provider keys, so it must never be an open relay.
+    ports:
+      - "127.0.0.1:4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in examples/compose/.env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-not-set}
+
+  # TODO(verify-paperclip): pin the official Paperclip image + seed a demo company.
+  # Uncomment when you have a Paperclip image/tag that matches your install.
+  # paperclip:
+  #   image: ghcr.io/paperclipai/paperclip:latest
+  #   ports:
+  #     - "3100:3100"
+  #   environment:
+  #     PAPERCLIP_DEPLOYMENT_MODE: local_trusted
+
+volumes:
+  dispatcher-data:
