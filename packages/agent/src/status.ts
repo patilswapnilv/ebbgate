@@ -17,12 +17,19 @@ export async function printStatus(
     lines.push(`gateway: ${rt.gatewayUrl}`);
     lines.push(`runnerPort: ${rt.runnerPort}`);
     lines.push(`config: ${rt.configPath}`);
+    lines.push(`env file: ${rt.envFile ?? "(none)"}`);
 
+    if (!rt.statusToken) {
+      // A node does not hold the dispatcher's admin secret, and does not need it.
+      lines.push("dispatcher /status: skipped (no admin secret available on this node)");
+      return lines.join("\n");
+    }
     try {
       const res = await fetchFn(`${rt.dispatcherUrl}/status`, {
-        headers: { authorization: `Bearer ${rt.ebbgate.paperclip.sharedSecret}` },
+        headers: { authorization: `Bearer ${rt.statusToken}` },
         signal: AbortSignal.timeout(5000),
       });
+      if (!res.ok) await res.body?.cancel();
       if (res.ok) {
         const body = (await res.json()) as {
           nodes?: Array<{ node: string; state: string; lastSeenAt: string | null }>;

@@ -5,12 +5,14 @@ export { probeOllama } from "./collectors/ollama.js";
 export { freeRamGb } from "./collectors/ram.js";
 export { loadAgentRuntime, readNodeId, writeNodeId } from "./config.js";
 export { postPresence, runDaemon } from "./daemon.js";
+export { loadEnvFile, parseEnvFile } from "./envfile.js";
 export {
   installAgent,
   renderLaunchAgentPlist,
   uninstallAgent,
 } from "./install.js";
 export { busyArgToMode, readMode, writeMode } from "./mode.js";
+export { readNodeCredentials } from "./node-credentials.js";
 export { AGENT_VERSION, DEFAULT_GATEWAY_URL, LAUNCH_AGENT_LABEL } from "./paths.js";
 export { buildPresenceReport } from "./report.js";
 export { startRunnerShim } from "./runner.js";

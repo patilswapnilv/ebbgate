@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -7,9 +7,12 @@ import {
   type AgentLocalFile,
   readAgentLocalFile,
   resolveConfigPath,
+  resolveEnvFile,
   writeAgentLocalFile,
   writeNodeId,
 } from "./config.js";
+import { loadEnvFile } from "./envfile.js";
+import { readNodeCredentials } from "./node-credentials.js";
 import {
   DEFAULT_DISPATCHER_URL,
   DEFAULT_GATEWAY_URL,
@@ -29,6 +32,8 @@ export interface InstallOptions {
   gatewayUrl?: string;
   configPath?: string;
   runnerHost?: string;
+  /** Env file holding this node's secrets (e.g. EG_NODE_MINI_TOKEN). */
+  envFile?: string;
   /** Absolute path to the node binary that should run the CLI. */
   nodeBin?: string;
   /** Absolute path to packages/agent/dist/cli.js */
@@ -46,6 +51,8 @@ export function defaultCliPath(): string {
 /** Everything the installed daemon needs, resolved once at install time. */
 export interface InstallSettings {
   configPath: string;
+  /** Absolute env-file path, or undefined if secrets come from the environment only. */
+  envFile?: string;
   dispatcherUrl: string;
   gatewayUrl: string;
   ollamaUrl: string;
@@ -59,13 +66,33 @@ export interface InstallSettings {
  * The config path is made absolute, so launchd never depends on the shell's cwd.
  */
 export function resolveInstallSettings(
-  opts: Pick<InstallOptions, "configPath" | "dispatcherUrl" | "gatewayUrl" | "runnerHost">,
+  opts: Pick<
+    InstallOptions,
+    "configPath" | "dispatcherUrl" | "gatewayUrl" | "runnerHost" | "envFile"
+  >,
   env: NodeJS.ProcessEnv,
   local: AgentLocalFile,
 ): InstallSettings {
-  const configPath = opts.configPath ? resolve(opts.configPath) : resolveConfigPath(env, local); // EBBGATE_CONFIG -> saved path -> ./ebbgate.yaml -> ~/.ebbgate
+  let configPath: string;
+  if (opts.configPath) {
+    configPath = resolve(opts.configPath);
+    if (!existsSync(configPath)) throw new Error(`config not found: ${configPath} (from --config)`);
+  } else {
+    // EBBGATE_CONFIG -> saved path -> ./ebbgate.yaml -> ~/.ebbgate; explicit ones must exist
+    configPath = resolveConfigPath(env, local);
+  }
+
+  let envFile: string | undefined;
+  if (opts.envFile) {
+    envFile = resolve(opts.envFile);
+    if (!existsSync(envFile)) throw new Error(`env file not found: ${envFile} (from --env-file)`);
+  } else {
+    envFile = resolveEnvFile(env, local, configPath);
+  }
+
   return {
     configPath,
+    ...(envFile ? { envFile } : {}),
     dispatcherUrl: (
       opts.dispatcherUrl ??
       env.EBBGATE_DISPATCHER_URL ??
@@ -90,6 +117,8 @@ export function launchAgentEnv(
   const vars: Record<string, string> = {
     EBBGATE_NODE: node,
     EBBGATE_CONFIG: settings.configPath,
+    // A path only: secret values never go into the plist.
+    ...(settings.envFile ? { EBBGATE_ENV_FILE: settings.envFile } : {}),
     EBBGATE_DISPATCHER_URL: settings.dispatcherUrl,
     EBBGATE_GATEWAY_URL: settings.gatewayUrl,
     EBBGATE_OLLAMA_URL: settings.ollamaUrl,
@@ -168,6 +197,27 @@ function escapeXml(s: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/**
+ * Confirm the daemon will find this node's token the way launchd will start it:
+ * from the env file (plus whatever the job's environment provides).
+ */
+export function preflightCredentials(
+  node: string,
+  settings: InstallSettings,
+  env: NodeJS.ProcessEnv,
+): void {
+  const fileVars = settings.envFile ? loadEnvFile(settings.envFile).vars : {};
+  readNodeCredentials({
+    yamlText: readFileSync(settings.configPath, "utf8"),
+    configPath: settings.configPath,
+    node,
+    // launchd does not inherit the installing shell, so only the file counts,
+    // plus EBBGATE_* settings written into the plist.
+    env: { ...fileVars, ...launchAgentEnv(node, settings, env) },
+    ...(settings.envFile ? { envFile: settings.envFile } : {}),
+  });
+}
+
 export async function installAgent(opts: InstallOptions): Promise<{ plistPath: string }> {
   const exec = opts.exec ?? execFileAsync;
   const plistPath = opts.plistPath ?? LAUNCH_AGENT_PLIST;
@@ -176,8 +226,9 @@ export async function installAgent(opts: InstallOptions): Promise<{ plistPath: s
   const env = opts.env ?? process.env;
 
   const local = readAgentLocalFile();
-  // Resolve before writing anything: fails early (no half-install) if no config exists.
+  // Resolve and check before writing anything: no half-install.
   const settings = resolveInstallSettings(opts, env, local);
+  preflightCredentials(opts.node, settings, env);
 
   writeNodeId(opts.node);
   writeAgentLocalFile({ ...local, node: opts.node, ...settings });

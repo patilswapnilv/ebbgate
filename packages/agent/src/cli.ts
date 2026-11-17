@@ -29,6 +29,7 @@ async function main(argv: string[]): Promise<void> {
         ...(opts.gateway ? { gatewayUrl: opts.gateway } : {}),
         ...(opts.config ? { configPath: resolve(opts.config) } : {}),
         ...(opts.runnerHost ? { runnerHost: opts.runnerHost } : {}),
+        ...(opts.envFile ? { envFile: resolve(opts.envFile) } : {}),
       });
       console.log(`installed launch agent → ${result.plistPath}`);
       console.log(`node=${node}`);
@@ -95,6 +96,7 @@ function parseFlags(args: string[]): {
   gateway?: string;
   config?: string;
   runnerHost?: string;
+  envFile?: string;
 } {
   const out: {
     node?: string;
@@ -102,6 +104,7 @@ function parseFlags(args: string[]): {
     gateway?: string;
     config?: string;
     runnerHost?: string;
+    envFile?: string;
   } = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -114,6 +117,9 @@ function parseFlags(args: string[]): {
       i++;
     } else if (a === "--gateway" && next) {
       out.gateway = next;
+      i++;
+    } else if (a === "--env-file" && next) {
+      out.envFile = next;
       i++;
     } else if (a === "--runner-host" && next) {
       out.runnerHost = next;
@@ -131,7 +137,7 @@ function helpText(): string {
 
 Usage:
   ebbgate agent install --node <id> [--dispatcher URL] [--gateway URL] [--config PATH]
-                        [--runner-host HOST]
+                        [--runner-host HOST] [--env-file PATH]
   ebbgate agent uninstall
   ebbgate agent run
   ebbgate busy on|off|auto

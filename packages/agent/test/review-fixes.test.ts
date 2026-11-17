@@ -100,7 +100,9 @@ describe("install settings are resolved and persisted", () => {
   });
 
   it("uses option -> environment -> saved value -> default, for every endpoint", () => {
-    const local = { configPath: "/saved/ebbgate.yaml", dispatcherUrl: "http://saved:8790" };
+    const saved = join(dir, "saved.yaml");
+    writeFileSync(saved, "x: 1\n");
+    const local = { configPath: saved, dispatcherUrl: "http://saved:8790" };
     const env = {
       EBBGATE_DISPATCHER_URL: "http://env:8790/",
       EBBGATE_GATEWAY_URL: "http://env-gw/paperclip",
@@ -110,24 +112,26 @@ describe("install settings are resolved and persisted", () => {
     expect(fromEnv.dispatcherUrl).toBe("http://env:8790");
     expect(fromEnv.gatewayUrl).toBe("http://env-gw/paperclip");
     expect(fromEnv.runnerHost).toBe("100.64.0.5");
-    expect(fromEnv.configPath).toBe("/saved/ebbgate.yaml");
+    expect(fromEnv.configPath).toBe(saved);
 
     const explicit = resolveInstallSettings({ dispatcherUrl: "http://opt:8790" }, env, local);
     expect(explicit.dispatcherUrl).toBe("http://opt:8790");
 
-    const saved = resolveInstallSettings({}, {}, local);
-    expect(saved.dispatcherUrl).toBe("http://saved:8790");
+    const fromSaved = resolveInstallSettings({}, {}, local);
+    expect(fromSaved.dispatcherUrl).toBe("http://saved:8790");
 
-    const defaults = resolveInstallSettings({}, {}, { configPath: "/c.yaml" });
+    const defaults = resolveInstallSettings({}, {}, { configPath: saved });
     expect(defaults.dispatcherUrl).toBe(DEFAULT_DISPATCHER_URL);
     expect(defaults.runnerHost).toBe(DEFAULT_RUNNER_HOST);
   });
 
   it("writes every resolved setting and a working directory into the plist", () => {
+    const cfg = join(dir, "ebbgate.yaml");
+    writeFileSync(cfg, "x: 1\n");
     const settings = resolveInstallSettings(
       { dispatcherUrl: "http://cloud:8790", runnerHost: "0.0.0.0" },
       { EBBGATE_GATEWAY_URL: "http://gw/paperclip" },
-      { configPath: "/Users/me/ebbgate.yaml" },
+      { configPath: cfg },
     );
     const xml = buildLaunchAgentPlist({
       node: "mini",
@@ -138,7 +142,7 @@ describe("install settings are resolved and persisted", () => {
     });
     for (const expected of [
       "<key>EBBGATE_CONFIG</key>",
-      "<string>/Users/me/ebbgate.yaml</string>",
+      `<string>${cfg}</string>`,
       "<string>http://cloud:8790</string>",
       "<string>http://gw/paperclip</string>",
       "<key>EBBGATE_RUNNER_HOST</key>",
