@@ -3,7 +3,7 @@
 Guidance for coding agents (Cursor, Claude Code, Codex) working on Ebbgate.
 
 1. Read `BUILD_SPEC.md` first. It is the source of truth for scope, architecture and milestones.
-2. Current status: **M2 in review** (`packages/dispatcher`, PR #1). M3 (`packages/agent`) and M4 (`packages/cli`, compose quickstart) are in stacked PRs on top of it.
+2. Current status: **M2 in review** (`packages/dispatcher`, PR #1). Later milestones (M3 agent, M4 cli/compose, M5 docs/`EG_DEMO`) land as stacked PRs — one milestone per PR.
 3. Work one milestone at a time and stop with a summary: what was built, test results, open `TODO(verify-paperclip)` items, decisions made.
 4. Never break the privacy invariants in spec §1. They are covered by tests in `packages/core/test/privacy.property.test.ts`; add equivalent tests for every new routing path.
 5. Do not invent Paperclip API shapes; see spec §7.

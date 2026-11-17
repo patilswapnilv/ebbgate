@@ -2,54 +2,147 @@
 
 **Agents flow to the cloud when your machine sleeps. Private work waits at the gate.**
 
-Ebbgate is a presence-aware task dispatcher for AI agents orchestrated by [Paperclip](https://paperclip.ing).
+<!-- GIF placeholder: laptop lid closes → Telegram “deferred” → lid opens → agent resumes -->
+> _Demo GIF coming soon — lid closes → notify → lid opens → deferred work wakes._
 
-- When your machine is **available**, agent tasks run on it: local models, local files, zero token cost.
-- When you're **busy** on it, only private work stays local, at low priority. Everything else moves to the cloud.
-- When it's **offline**, non-private work runs on a cloud runtime. **Private work waits** and resumes automatically when your machine comes back.
+[![CI](https://github.com/patilswapnilv/ebbgate/actions/workflows/ci.yml/badge.svg)](https://github.com/patilswapnilv/ebbgate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+A presence-aware **task dispatcher** for AI agents orchestrated by [Paperclip](https://paperclip.ing).
+
+## Why
+
+- **Free local inference when you’re on** — Ollama (or your local gateway) while the Mac is available.
+- **Agents don’t stop when you’re off** — non-private work moves to a cloud runtime; private work waits and resumes.
+- **Private work never silently goes to the cloud** — config and runtime guards; unknown agents fail closed as private.
 
 Model-level fallback (per LLM call) stays with [LiteLLM](https://github.com/BerriAI/litellm). Ebbgate works one level up: per **task**.
 
-> **Status: pre-alpha.** Milestone 1 (the policy engine) is done. The dispatcher, presence agent and CLI are next. See [`BUILD_SPEC.md`](./BUILD_SPEC.md).
+## How it works
 
-## How it decides
+```
+Presence agent (Mac) ──► Dispatcher ──► local / cloud / defer
+                              ▲
+Paperclip http adapter ───────┘
+```
 
-| Task              | Machine available  | Machine busy        | Machine offline |
-| ----------------- | ------------------ | ------------------- | --------------- |
-| Private           | Local              | Local, low priority | **Wait**        |
-| Internal          | Local              | Cloud               | Cloud           |
-| Public            | Cloud              | Cloud               | Cloud           |
-| Needs local files | Local              | Local, low priority | Wait + notify   |
-| Unknown agent     | treated as private |                     |                 |
+| Task                | available          | busy      | offline   |
+| ------------------- | ------------------ | --------- | --------- |
+| private             | local              | local-low | **defer** |
+| internal            | local              | cloud     | cloud     |
+| public              | cloud              | cloud     | cloud     |
+| label `local-files` | local              | local-low | defer     |
+| unknown agent       | treated as private |           |           |
 
-The rules live in one file, `ebbgate.yaml` ([example](./ebbgate.example.yaml)). Two independent safeguards keep private work local:
+Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md).
 
-1. **At startup**, any rule that could send a private task to the cloud is rejected, with the exact path of the offending setting.
-2. **At runtime**, every decision passes a final guard that turns a private→cloud decision into a wait.
+## Quickstart (5 minutes)
 
-Both are covered by tests, including a randomized test over thousands of generated policies.
+### Option A — Docker Compose
 
-## Packages
+```bash
+git clone https://github.com/patilswapnilv/ebbgate.git && cd ebbgate
+cp examples/compose/.env.example examples/compose/.env
+# edit .env — every secret must be ≥16 characters
 
-| Package               | Purpose                                                            | Milestone |
-| --------------------- | ------------------------------------------------------------------ | --------- |
-| `@ebbgate/core`       | Config schema and the pure policy engine                           | ✅ M1     |
-| `@ebbgate/dispatcher` | HTTP service: Paperclip adapter endpoint, presence, deferred queue | M2        |
-| `@ebbgate/agent`      | macOS presence agent, busy toggle, runner shim                     | M3        |
-| `@ebbgate/cli`        | `npx ebbgate init` wizard, LiteLLM config generator                | M4        |
+docker compose -f examples/compose/docker-compose.yml up --build
+# dispatcher :8790   LiteLLM 127.0.0.1:4000 (requires LITELLM_MASTER_KEY)
+```
 
-## Development
+On your Mac, after `pnpm install && pnpm build`, give the node its own token, and only that:
 
-Requires Node 22+ and pnpm 10.
+```bash
+mkdir -p ~/.ebbgate
+grep '^EG_NODE_MINI_TOKEN=' examples/compose/.env > ~/.ebbgate/.env
+chmod 600 ~/.ebbgate/.env
+
+pnpm ebbgate agent install \
+  --node mini \
+  --dispatcher http://127.0.0.1:8790 \
+  --config examples/compose/ebbgate.yaml \
+  --env-file ~/.ebbgate/.env \
+  --runner-host 0.0.0.0
+
+pnpm ebbgate runner   # :8787 shim (separate terminal)
+```
+
+Point Paperclip agents at `http://127.0.0.1:8790/run` with  
+`Authorization: Bearer <EG_PAPERCLIP_SECRET>`.
+
+Full compose notes: [`examples/compose/README.md`](./examples/compose/README.md).
+
+### Option B — `ebbgate init`
+
+```bash
+pnpm install && pnpm build
+pnpm ebbgate init           # runs in the directory you call it from
+# or: pnpm ebbgate init --yes   (refuses to overwrite existing files without --force)
+```
+
+Writes `ebbgate.yaml`, `.env.example`, and `litellm.config.yaml`, then prints adapter settings and next steps.
+
+### Demo logging
+
+```bash
+EG_DEMO=1 node packages/dispatcher/dist/index.js
+```
+
+Prints plain-text decision blocks (no secrets) — handy for screen recordings.
+
+## Policy file
+
+Annotated example: [`ebbgate.example.yaml`](./ebbgate.example.yaml). Rules are first-match; private→cloud is rejected at load time and again at runtime. See [`docs/policy.md`](./docs/policy.md).
+
+## Works with
+
+- **Paperclip** — `http` adapter → Ebbgate `/run`
+- **LiteLLM** — model aliases (`private-fast`, `internal-smart`, …)
+- **Ollama / LM Studio** — local models on the node
+- **OpenClaw** — local/cloud gateway behind the runner shim  
+  (`TODO(verify-paperclip)`: exact path)
+- **Claude Code** (and other agent CLIs) — via Paperclip adapters, not Ebbgate directly
+
+## Ebbgate vs LiteLLM fallbacks
+
+LiteLLM retries the **next model** when a call fails. Ebbgate chooses the **runtime** (this Mac vs cloud vs wait) from presence and tier. Use both; don’t replace one with the other. Longer write-up: [`docs/why-not-litellm-fallbacks.md`](./docs/why-not-litellm-fallbacks.md).
+
+## Privacy model
+
+|                                          | Cloud may see                                      | Cloud never sees (via Ebbgate)                          |
+| ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| Public / internal tasks routed to cloud  | Paperclip wake payload forwarded to `cloud.runner` | —                                                       |
+| Private / deferred / unknown-agent tasks | —                                                  | Payloads stay on disk in the deferred queue until local |
+
+Auth, redaction, and invariants: [`docs/security.md`](./docs/security.md).
+
+## Roadmap
+
+| Milestone                    | Status                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| M1 Core + policy             | done                                                                    |
+| M2 Dispatcher                | done                                                                    |
+| M3 Presence agent + SwiftBar | done                                                                    |
+| M4 Init + compose            | done                                                                    |
+| M5 Docs + `EG_DEMO`          | done                                                                    |
+| Later                        | Windows/Linux agents, menu-bar app, multi-user auth, more orchestrators |
+
+Source of truth while building: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
+
+## Contributing
 
 ```bash
 pnpm install
-pnpm test        # vitest
-pnpm lint        # biome
-pnpm typecheck
-pnpm build
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
+
+- One milestone-sized change at a time; keep `@ebbgate/core` free of I/O.
+- Never invent Paperclip API shapes — fixtures + `TODO(verify-paperclip)` if unsure.
+- No real secrets in git.
+
+## Credits
+
+Built on [Paperclip](https://paperclip.ing), [LiteLLM](https://github.com/BerriAI/litellm), and [Ollama](https://ollama.com). **Not an official Paperclip project.**
 
 ## License
 
-MIT. Built on Paperclip, LiteLLM and Ollama. Not an official Paperclip project.
+MIT

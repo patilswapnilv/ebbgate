@@ -2,6 +2,7 @@ import type { EbbgateConfig } from "@ebbgate/core";
 import { Hono } from "hono";
 import type { AppEnv } from "./app-types.js";
 import type { Db } from "./db/index.js";
+import { createDemoWriter, type DemoWriter, isDemoMode } from "./demo.js";
 import { createLogger, type Logger } from "./logger.js";
 import type { PaperclipClient } from "./paperclip/types.js";
 import { healthzRoutes } from "./routes/healthz.js";
@@ -20,6 +21,9 @@ export interface CreateAppOptions {
   now?: () => Date;
   fetch?: typeof fetch;
   notifier?: Notifier;
+  /** Override EG_DEMO detection; mainly for tests. */
+  demo?: boolean;
+  demoWrite?: DemoWriter;
 }
 
 export interface AppHandle {
@@ -33,6 +37,8 @@ export function createApp(opts: CreateAppOptions): AppHandle {
   const logger = opts.logger ?? createLogger();
   const now = opts.now ?? (() => new Date());
   const fetchFn = opts.fetch ?? fetch;
+  const demoEnabled = opts.demo ?? isDemoMode();
+  const demo = createDemoWriter(demoEnabled, opts.demoWrite);
   const notifier = opts.notifier ?? createNotifier(opts.config, logger, fetchFn);
   const presence = createPresenceService({
     db: opts.db,
@@ -42,6 +48,7 @@ export function createApp(opts: CreateAppOptions): AppHandle {
     logger,
     now,
     fetch: fetchFn,
+    demo,
   });
   presence.ensureConfiguredNodes();
 
@@ -56,6 +63,7 @@ export function createApp(opts: CreateAppOptions): AppHandle {
     c.set("logger", logger);
     c.set("now", now);
     c.set("fetch", fetchFn);
+    c.set("demo", demo);
     await next();
   });
 
