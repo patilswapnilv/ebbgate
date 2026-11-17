@@ -46,18 +46,24 @@ cp examples/compose/.env.example examples/compose/.env
 # edit .env — every secret must be ≥16 characters
 
 docker compose -f examples/compose/docker-compose.yml up --build
-# dispatcher :8790   LiteLLM :4000
+# dispatcher :8790   LiteLLM 127.0.0.1:4000 (requires LITELLM_MASTER_KEY)
 ```
 
-On your Mac (separate terminals), after `pnpm install && pnpm build`:
+On your Mac, after `pnpm install && pnpm build`, give the node its own token, and only that:
 
 ```bash
-pnpm --filter @ebbgate/cli exec ebbgate agent install \
+mkdir -p ~/.ebbgate
+grep '^EG_NODE_MINI_TOKEN=' examples/compose/.env > ~/.ebbgate/.env
+chmod 600 ~/.ebbgate/.env
+
+pnpm ebbgate agent install \
   --node mini \
   --dispatcher http://127.0.0.1:8790 \
-  --config examples/compose/ebbgate.yaml
+  --config examples/compose/ebbgate.yaml \
+  --env-file ~/.ebbgate/.env \
+  --runner-host 0.0.0.0
 
-pnpm --filter @ebbgate/cli exec ebbgate runner   # :8787 shim
+pnpm ebbgate runner   # :8787 shim (separate terminal)
 ```
 
 Point Paperclip agents at `http://127.0.0.1:8790/run` with  
@@ -69,8 +75,8 @@ Full compose notes: [`examples/compose/README.md`](./examples/compose/README.md)
 
 ```bash
 pnpm install && pnpm build
-pnpm --filter @ebbgate/cli exec ebbgate init
-# or: ebbgate init --yes
+pnpm ebbgate init           # runs in the directory you call it from
+# or: pnpm ebbgate init --yes   (refuses to overwrite existing files without --force)
 ```
 
 Writes `ebbgate.yaml`, `.env.example`, and `litellm.config.yaml`, then prints adapter settings and next steps.
