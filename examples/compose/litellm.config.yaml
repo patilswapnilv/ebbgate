@@ -1,0 +1,28 @@
+# LiteLLM aliases for the compose quickstart (BUILD_SPEC §9).
+model_list:
+  - model_name: private-fast
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: http://host.docker.internal:11434
+  - model_name: private-smart
+    litellm_params:
+      model: ollama/llama3.1
+      api_base: http://host.docker.internal:11434
+
+  - model_name: internal-smart
+    litellm_params:
+      model: ollama/llama3.1
+      api_base: http://host.docker.internal:11434
+  - model_name: internal-smart
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: cloud-reason
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: cloud-cheap
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY

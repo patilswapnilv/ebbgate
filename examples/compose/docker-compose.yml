@@ -1,0 +1,63 @@
+# Ebbgate quickstart stack: dispatcher + LiteLLM (+ optional Paperclip).
+# From repo root:
+#   cp examples/compose/.env.example examples/compose/.env
+#   docker compose -f examples/compose/docker-compose.yml up --build
+#
+# Local Mac nodes still run outside Compose:
+#   ebbgate agent install --node mini --dispatcher http://127.0.0.1:8790
+#   ebbgate runner
+
+name: ebbgate
+
+services:
+  dispatcher:
+    build:
+      context: ../..
+      dockerfile: examples/compose/Dockerfile.dispatcher
+    ports:
+      - "8790:8790"
+    env_file:
+      - .env
+    environment:
+      EBBGATE_CONFIG: /app/ebbgate.yaml
+      EBBGATE_DB: /data/ebbgate.db
+      LOG_LEVEL: info
+    volumes:
+      - ./ebbgate.yaml:/app/ebbgate.yaml:ro
+      - dispatcher-data:/data
+    depends_on:
+      litellm:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8790/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-not-set}
+
+  # TODO(verify-paperclip): pin the official Paperclip image + seed a demo company.
+  # Uncomment when you have a Paperclip image/tag that matches your install.
+  # paperclip:
+  #   image: ghcr.io/paperclipai/paperclip:latest
+  #   ports:
+  #     - "3100:3100"
+  #   environment:
+  #     PAPERCLIP_DEPLOYMENT_MODE: local_trusted
+
+volumes:
+  dispatcher-data:
