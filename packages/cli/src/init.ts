@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { DETECT_DEFAULTS, detectServices } from "./detect.js";
@@ -12,6 +12,8 @@ export interface InitOptions {
   cwd?: string;
   /** Non-interactive defaults for tests / CI. */
   yes?: boolean;
+  /** Replace existing ebbgate.yaml / .env.example / litellm.config.yaml. */
+  force?: boolean;
   fetch?: typeof fetch;
   answers?: Partial<InitAnswers> & { companyId?: string; paperclipApiKey?: string };
 }
@@ -25,11 +27,33 @@ export interface InitResult {
 
 const TIERS: Tier[] = ["private", "internal", "public"];
 
+export const INIT_FILES = ["ebbgate.yaml", ".env.example", "litellm.config.yaml"] as const;
+
+export class ExistingConfigError extends Error {
+  constructor(readonly existing: string[]) {
+    super(
+      `refusing to overwrite existing ${existing.join(", ")}; ` +
+        "re-run with --force to replace them (or run init in an empty directory)",
+    );
+    this.name = "ExistingConfigError";
+  }
+}
+
 export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
   const cwd = resolve(opts.cwd ?? process.cwd());
   const fetchFn = opts.fetch ?? fetch;
 
-  if (!opts.yes) {
+  // Check before asking anything: never lose node definitions, tiers or model settings.
+  const existing = INIT_FILES.filter((f) => existsSync(resolve(cwd, f)));
+  if (existing.length > 0 && !opts.force) {
+    if (opts.yes) throw new ExistingConfigError(existing);
+    p.intro("ebbgate init");
+    const ok = await p.confirm({
+      message: `${existing.join(", ")} already exist in ${cwd}. Replace them?`,
+      initialValue: false,
+    });
+    if (p.isCancel(ok) || !ok) return cancel();
+  } else if (!opts.yes) {
     p.intro("ebbgate init");
   }
 
@@ -211,10 +235,10 @@ ${Object.entries(nodeSecrets)
 
 Next steps:
   1. Copy .env.example → .env and fill PAPERCLIP_API_KEY + the secrets above
-  2. Start the dispatcher:  pnpm --filter @ebbgate/dispatcher start
+  2. Start the dispatcher:  node packages/dispatcher/dist/index.js
      (or: docker compose -f examples/compose/docker-compose.yml up)
-  3. On each Mac node:  ebbgate agent install --node <id> --dispatcher ${answers.publicUrl} --config ./ebbgate.yaml
-  4. On each Mac node:  ebbgate runner   # local shim on :8787
+  3. On each Mac node:  pnpm ebbgate agent install --node <id> --dispatcher ${answers.publicUrl} --config ./ebbgate.yaml --runner-host <reachable IP>
+  4. On each Mac node:  pnpm ebbgate runner   # local shim on :8787
 `;
 
   if (!opts.yes) {

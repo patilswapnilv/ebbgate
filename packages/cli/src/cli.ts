@@ -1,15 +1,20 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { runAgentCli } from "@ebbgate/agent";
+import { isEntrypoint, runAgentCli } from "@ebbgate/agent";
 import { runInit } from "./init.js";
 
 async function main(argv: string[]): Promise<void> {
+  // Run in the directory the user invoked from. Via `pnpm ebbgate ...` the script
+  // runs in the repo root, and pnpm/npm record the caller's directory in INIT_CWD.
+  if (process.env.INIT_CWD && process.env.INIT_CWD !== process.cwd()) {
+    process.chdir(process.env.INIT_CWD);
+  }
+
   const [cmd] = argv;
 
   if (cmd === "init") {
     const yes = argv.includes("--yes") || argv.includes("-y");
-    const result = await runInit({ yes });
+    const force = argv.includes("--force");
+    const result = await runInit({ yes, force });
     if (yes) {
       console.log(`wrote:\n${result.files.map((f) => `  ${f}`).join("\n")}`);
       console.log(
@@ -27,7 +32,7 @@ async function main(argv: string[]): Promise<void> {
     console.log(`ebbgate — presence-aware task dispatcher for Paperclip agents
 
 Usage:
-  ebbgate init [--yes]
+  ebbgate init [--yes] [--force]
   ebbgate agent install|uninstall|run
   ebbgate busy on|off|auto
   ebbgate status
@@ -40,10 +45,7 @@ Usage:
   await runAgentCli(argv);
 }
 
-const isMain =
-  process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-
-if (isMain) {
+if (isEntrypoint(import.meta.url)) {
   main(process.argv.slice(2)).catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);

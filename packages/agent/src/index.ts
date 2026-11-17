@@ -6,6 +6,7 @@ export { freeRamGb } from "./collectors/ram.js";
 export { main as runAgentCli } from "./commands.js";
 export { loadAgentRuntime, readNodeId, writeNodeId } from "./config.js";
 export { postPresence, runDaemon } from "./daemon.js";
+export { isEntrypoint } from "./entrypoint.js";
 export { loadEnvFile, parseEnvFile } from "./envfile.js";
 export {
   installAgent,
@@ -17,4 +18,3 @@ export { readNodeCredentials } from "./node-credentials.js";
 export { AGENT_VERSION, DEFAULT_GATEWAY_URL, LAUNCH_AGENT_LABEL } from "./paths.js";
 export { buildPresenceReport } from "./report.js";
 export { startRunnerShim } from "./runner.js";
-export { isEntrypoint } from "./entrypoint.js";

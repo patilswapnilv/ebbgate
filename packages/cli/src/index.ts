@@ -3,5 +3,11 @@ export { type InitAnswers, renderEbbgateYaml, type Tier } from "./generate/ebbga
 export { renderEnvExample } from "./generate/env-example.js";
 export { renderLitellmConfig } from "./generate/litellm.js";
 export { envKeyForNodeToken, generateSecret } from "./generate/secrets.js";
-export { type InitOptions, type InitResult, runInit } from "./init.js";
+export {
+  ExistingConfigError,
+  INIT_FILES,
+  type InitOptions,
+  type InitResult,
+  runInit,
+} from "./init.js";
 export { listPaperclipAgents } from "./paperclip-agents.js";

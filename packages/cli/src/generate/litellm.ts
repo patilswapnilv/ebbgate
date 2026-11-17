@@ -1,6 +1,13 @@
 /**
  * LiteLLM config with the aliases from BUILD_SPEC §9.
- * private-* stay on Ollama; internal can fall through to cloud placeholders.
+ *
+ * - `private-*` exist only on Ollama and have no fallback: private work never
+ *   reaches a cloud model, even at the model layer.
+ * - `internal-smart` has one deployment (Ollama). The cloud model is a separate
+ *   alias (`internal-cloud`) used only as an explicit fallback, so a healthy local
+ *   model always serves the request. (Two deployments under one name would be
+ *   load-balanced, sending internal work to the cloud while Ollama is up.)
+ * - The proxy requires LITELLM_MASTER_KEY, so it is never an open inference relay.
  */
 export function renderLitellmConfig(ollamaUrl: string): string {
   const base = ollamaUrl.replace(/\/$/, "");
@@ -8,6 +15,7 @@ export function renderLitellmConfig(ollamaUrl: string): string {
 # Model-level fallbacks live here; Ebbgate decides at the task level.
 
 model_list:
+  # Local only. No fallback: private work never reaches a cloud model.
   - model_name: private-fast
     litellm_params:
       model: ollama/llama3.2
@@ -17,11 +25,12 @@ model_list:
       model: ollama/llama3.1
       api_base: ${base}
 
+  # Local first; the cloud alias below is used only if the local model fails.
   - model_name: internal-smart
     litellm_params:
       model: ollama/llama3.1
       api_base: ${base}
-  - model_name: internal-smart
+  - model_name: internal-cloud
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
@@ -36,6 +45,11 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
 
 router_settings:
-  routing_strategy: simple-shuffle
+  fallbacks:
+    - internal-smart: ["internal-cloud"]
+
+general_settings:
+  # Every request must carry this key (Authorization: Bearer <key>).
+  master_key: os.environ/LITELLM_MASTER_KEY
 `;
 }

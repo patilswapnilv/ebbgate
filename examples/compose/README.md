@@ -24,21 +24,23 @@ docker compose -f examples/compose/docker-compose.yml up --build
 ```
 
 - Dispatcher: http://127.0.0.1:8790/healthz
-- LiteLLM: http://127.0.0.1:4000
+- LiteLLM: http://127.0.0.1:4000 (this machine only; requests need `Authorization: Bearer $LITELLM_MASTER_KEY`)
 
 Paperclip is not started by default (image/tag still `TODO(verify-paperclip)`). Run your own Paperclip on the host and point agents at `http://127.0.0.1:8790/run`.
 
 ## 3. Local node (Mac)
 
 ```bash
+# from the repo root
 pnpm install && pnpm build
-pnpm --filter @ebbgate/cli exec ebbgate agent install \
+pnpm ebbgate agent install \
   --node mini \
   --dispatcher http://127.0.0.1:8790 \
-  --config examples/compose/ebbgate.yaml
+  --config examples/compose/ebbgate.yaml \
+  --runner-host 0.0.0.0
 
 # stable runner endpoint the dispatcher calls via host.docker.internal:8787
-pnpm --filter @ebbgate/cli exec ebbgate runner
+pnpm ebbgate runner
 ```
 
 Check presence:
@@ -60,9 +62,12 @@ For each agent that should go through Ebbgate:
 ## Fresh machine via init
 
 ```bash
-pnpm --filter @ebbgate/cli exec ebbgate init
+# from the repo root, after pnpm install && pnpm build
+pnpm ebbgate init
 # or non-interactive:
-pnpm --filter @ebbgate/cli exec ebbgate init --yes
+pnpm ebbgate init --yes
 ```
 
-Writes `ebbgate.yaml`, `.env.example`, and `litellm.config.yaml` in the current directory.
+`pnpm ebbgate` runs the built CLI (`packages/cli/dist/cli.js`) in the directory you call it from, so relative paths such as `--config ./ebbgate.yaml` resolve where you expect. It writes `ebbgate.yaml`, `.env.example` and `litellm.config.yaml` there, and refuses to replace existing files unless you pass `--force`.
+
+`--config` is stored as an absolute path, so the installed agent finds it no matter where launchd starts it. `--runner-host 0.0.0.0` lets the dispatcher container reach the runner; on a shared network, prefer a VPN/Tailscale IP.

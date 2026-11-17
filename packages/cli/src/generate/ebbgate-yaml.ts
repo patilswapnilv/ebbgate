@@ -42,7 +42,7 @@ export function renderEbbgateYaml(a: InitAnswers): string {
 
 server:
   port: ${a.dispatcherPort}
-  host: 127.0.0.1
+  ${bindHostLine(a.publicUrl)}
   publicUrl: ${a.publicUrl}
   maxBodyBytes: 1048576
 
@@ -86,4 +86,22 @@ presence:
   drainConcurrency: 2
   deferredMaxAgeHours: 72
 ${notify}`;
+}
+
+/**
+ * Bind address for the generated config. A loopback publicUrl keeps the
+ * dispatcher on 127.0.0.1; any other publicUrl must be reachable by the nodes,
+ * so the dispatcher listens on every interface (restrict with a firewall/VPN).
+ */
+export function bindHostLine(publicUrl: string): string {
+  let hostname = "";
+  try {
+    hostname = new URL(publicUrl).hostname;
+  } catch {
+    // invalid URLs are reported by loadConfig
+  }
+  const loopback = hostname === "localhost" || hostname === "[::1]" || hostname.startsWith("127.");
+  return loopback
+    ? "host: 127.0.0.1 # publicUrl is local-only"
+    : "host: 0.0.0.0 # nodes must reach publicUrl; restrict access with a firewall or VPN";
 }

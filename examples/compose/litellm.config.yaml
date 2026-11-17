@@ -1,5 +1,9 @@
 # LiteLLM aliases for the compose quickstart (BUILD_SPEC §9).
+# Generated from renderLitellmConfig("http://host.docker.internal:11434"); a test keeps them in sync.
+# Model-level fallbacks live here; Ebbgate decides at the task level.
+
 model_list:
+  # Local only. No fallback: private work never reaches a cloud model.
   - model_name: private-fast
     litellm_params:
       model: ollama/llama3.2
@@ -9,11 +13,12 @@ model_list:
       model: ollama/llama3.1
       api_base: http://host.docker.internal:11434
 
+  # Local first; the cloud alias below is used only if the local model fails.
   - model_name: internal-smart
     litellm_params:
       model: ollama/llama3.1
       api_base: http://host.docker.internal:11434
-  - model_name: internal-smart
+  - model_name: internal-cloud
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
@@ -26,3 +31,11 @@ model_list:
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+
+router_settings:
+  fallbacks:
+    - internal-smart: ["internal-cloud"]
+
+general_settings:
+  # Every request must carry this key (Authorization: Bearer <key>).
+  master_key: os.environ/LITELLM_MASTER_KEY
