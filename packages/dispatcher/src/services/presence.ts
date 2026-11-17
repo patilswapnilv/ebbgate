@@ -11,6 +11,7 @@ import {
   type Tier,
 } from "@ebbgate/core";
 import type { Db } from "../db/index.js";
+import { type DemoWriter, logDemoDecision, logDemoPresence } from "../demo.js";
 import type { Logger } from "../logger.js";
 import type { PaperclipClient } from "../paperclip/types.js";
 import type { Notifier } from "./notifier.js";
@@ -71,9 +72,11 @@ export function createPresenceService(deps: {
   logger: Logger;
   now: () => Date;
   fetch?: typeof fetch;
+  demo?: DemoWriter;
 }): PresenceService {
   const { db, config, paperclip, notifier, logger, now } = deps;
   const fetchFn = deps.fetch ?? fetch;
+  const demo = deps.demo ?? (() => {});
 
   function ensureConfiguredNodes(): void {
     const at = now().toISOString();
@@ -164,6 +167,7 @@ export function createPresenceService(deps: {
     next: PresenceState,
   ): Promise<void> {
     if (prev === next) return;
+    logDemoPresence(demo, { node: nodeId, from: prev, to: next });
 
     if (next === "offline") {
       // Claim the affected attempts synchronously, before any await, so runs
@@ -227,7 +231,7 @@ export function createPresenceService(deps: {
     return recovering;
   }
 
-  async function recoverRun(run: RunRow): Promise<void> {
+async function recoverRun(run: RunRow): Promise<void> {
     const nodeId = run.node_id;
     await notifier.notify(
       "run_interrupted",
@@ -253,6 +257,7 @@ export function createPresenceService(deps: {
     );
     const decision = decide(task, nodes, config);
     const decidedAt = now().toISOString();
+    logDemoDecision(demo, { task, tier: task.tier, nodes, decision });
 
     if (decision.action === "defer") {
       // The deferred row and the recovery marker commit together.

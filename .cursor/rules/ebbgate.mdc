@@ -5,7 +5,7 @@ alwaysApply: true
 
 - `BUILD_SPEC.md` is the source of truth; `AGENTS.md` lists the conventions below in full. Read both before writing code.
 - **One milestone per PR.** Never add a milestone to an open PR: branch `cursor/m<N>-<topic>` from the previous milestone's branch and open a new PR.
-- Status: M1 merged. M2 (dispatcher) is PR #1; M3 and M4 are stacked PRs on top of it.
+- Status: M1 merged. M2 (dispatcher) is PR #1; M3–M5 are stacked milestone PRs. Latest docs/`EG_DEMO` work is M5.
 - Invariants (spec §1): a `private` task never goes to the cloud; an unknown tier is `private`; a deferred task is persisted before responding; secrets never appear in logs, errors or responses.
 - Every workspace package must resolve from source for typecheck and tests (`ebbgate-source` export condition and vitest alias, as in `packages/core`).
 - Reuse existing patterns: `isEntrypoint()` for bins, configurable `host` for listeners, timeouts on every subprocess and HTTP call, conditional SQLite transitions, no silent overwrite of user config.
