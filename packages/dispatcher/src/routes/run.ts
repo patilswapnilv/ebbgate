@@ -2,6 +2,7 @@ import { decide, resolveTier, type TaskContext } from "@ebbgate/core";
 import { Hono } from "hono";
 import type { AppEnv } from "../app-types.js";
 import { bearerMatches } from "../auth.js";
+import { logDemoDecision } from "../demo.js";
 import { ParseError } from "../paperclip/parse.js";
 import { persistDeferred } from "../services/queue.js";
 import { relayResponse } from "../services/relay.js";
@@ -64,7 +65,8 @@ export function runRoutes(): Hono<AppEnv> {
     };
 
     // Invariant: private / unknown never go to cloud (enforced again in decide()).
-    const decision = decide(task, presence.listNodeStatuses(), config);
+    const nodes = presence.listNodeStatuses();
+    const decision = decide(task, nodes, config);
     const decidedAt = now().toISOString();
     recordDecision(db, {
       runId: task.runId,
@@ -74,6 +76,7 @@ export function runRoutes(): Hono<AppEnv> {
       decision,
       decidedAt,
     });
+    logDemoDecision(c.get("demo"), { task, tier, nodes, decision });
 
     if (decision.action === "defer") {
       // Persist first, then notify Paperclip / notifier (invariant 3).

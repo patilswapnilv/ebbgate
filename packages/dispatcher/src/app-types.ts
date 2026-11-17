@@ -1,5 +1,6 @@
 import type { EbbgateConfig } from "@ebbgate/core";
 import type { Db } from "./db/index.js";
+import type { DemoWriter } from "./demo.js";
 import type { Logger } from "./logger.js";
 import type { PaperclipClient } from "./paperclip/types.js";
 import type { Notifier } from "./services/notifier.js";
@@ -14,6 +15,7 @@ export type AppVariables = {
   logger: Logger;
   now: () => Date;
   fetch: typeof fetch;
+  demo: DemoWriter;
 };
 
 export type AppEnv = { Variables: AppVariables };
