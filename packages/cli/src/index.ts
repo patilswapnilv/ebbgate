@@ -1,2 +1,7 @@
-// Milestone 4 — see BUILD_SPEC.md §9.
-export const PACKAGE = "@ebbgate/cli";
+export { DETECT_DEFAULTS, detectServices } from "./detect.js";
+export { type InitAnswers, renderEbbgateYaml, type Tier } from "./generate/ebbgate-yaml.js";
+export { renderEnvExample } from "./generate/env-example.js";
+export { renderLitellmConfig } from "./generate/litellm.js";
+export { envKeyForNodeToken, generateSecret } from "./generate/secrets.js";
+export { type InitOptions, type InitResult, runInit } from "./init.js";
+export { listPaperclipAgents } from "./paperclip-agents.js";

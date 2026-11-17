@@ -3,6 +3,7 @@ export { parseOnBattery } from "./collectors/battery.js";
 export { parseHidIdleSeconds } from "./collectors/idle.js";
 export { probeOllama } from "./collectors/ollama.js";
 export { freeRamGb } from "./collectors/ram.js";
+export { main as runAgentCli } from "./commands.js";
 export { loadAgentRuntime, readNodeId, writeNodeId } from "./config.js";
 export { postPresence, runDaemon } from "./daemon.js";
 export {

@@ -5,7 +5,7 @@ alwaysApply: true
 
 - `BUILD_SPEC.md` in the repo root is the source of truth. Read the relevant sections before writing code.
 - Work one milestone at a time (spec §11). At the end of a milestone, stop and summarize: what was built, test results, open `TODO(verify-paperclip)` items, decisions made.
-- Status: M3 (`packages/agent`) is done. Next is M4 (`packages/cli` init + compose quickstart).
+- Status: M4 (`packages/cli` + compose) is done. Next is M5 (README + docs + `EG_DEMO=1`).
 - Invariants (spec §1): a `private` task never goes to the cloud; an unknown tier is `private`; a deferred task is persisted before responding; secrets never appear in logs or responses.
 - Reuse `@ebbgate/core` (`loadConfig`, `decide`, `deriveState`, `resolveTier`). Keep `packages/core` free of I/O.
 - Never invent Paperclip API shapes. Check docs.paperclip.ing; otherwise write an interface + fixture in `fixtures/paperclip/` + `TODO(verify-paperclip)`.

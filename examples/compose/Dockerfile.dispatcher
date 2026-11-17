@@ -1,0 +1,22 @@
+# Build the monorepo and run @ebbgate/dispatcher.
+FROM node:22-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+WORKDIR /src
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY fixtures ./fixtures
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @ebbgate/core build \
+  && pnpm --filter @ebbgate/dispatcher build
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+COPY --from=build /src /app
+ENV NODE_ENV=production
+ENV EBBGATE_CONFIG=/app/ebbgate.yaml
+ENV EBBGATE_DB=/data/ebbgate.db
+EXPOSE 8790
+CMD ["node", "packages/dispatcher/dist/index.js"]
