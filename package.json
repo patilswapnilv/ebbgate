@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "smoke": "node scripts/smoke-startup.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
@@ -22,5 +23,11 @@
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

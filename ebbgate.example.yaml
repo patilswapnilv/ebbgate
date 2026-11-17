@@ -4,7 +4,13 @@
 
 server:
   port: 8790
+  # Presence agents on other machines must reach publicUrl. 0.0.0.0 listens on every
+  # interface: limit access with a firewall or VPN (e.g. bind your Tailscale IP instead).
+  # The built-in default, when host is omitted, is 127.0.0.1 (this machine only).
+  host: 0.0.0.0
   publicUrl: http://cloud:8790
+  maxBodyBytes: 1048576 # requests larger than this get HTTP 413
+  runnerTimeoutMs: 600000 # one forward to a runner, including its response body
 
 nodes:
   mini: { runner: http://mini:8787, token: "${EG_NODE_MINI_TOKEN}" }
@@ -17,6 +23,9 @@ paperclip:
   apiUrl: http://paperclip:3100
   apiKey: "${PAPERCLIP_API_KEY}"
   sharedSecret: "${EG_PAPERCLIP_SECRET}"
+  # Also label deferred issues `waiting-for-local`. Off by default: Paperclip replaces
+  # an issue's whole label set on update, so a concurrent label change could be lost.
+  labelDeferred: false
 
 # Tier is decided here, never by the caller. Unknown agents are treated as private.
 agents:

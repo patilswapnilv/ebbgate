@@ -122,7 +122,12 @@ type Decision =
 ```yaml
 server:
   port: 8790
+  host: 0.0.0.0            # must be reachable at publicUrl by every node; default when
+                           # omitted is 127.0.0.1. Restrict with a firewall/VPN, or bind
+                           # a private (e.g. Tailscale) IP.
   publicUrl: http://cloud:8790
+  maxBodyBytes: 1048576    # larger request bodies get HTTP 413
+  runnerTimeoutMs: 600000   # bound for one runner forward, body included
 
 nodes:
   mini: { runner: http://mini:8787, token: ${EG_NODE_MINI_TOKEN} }
@@ -135,6 +140,7 @@ paperclip:
   apiUrl: http://paperclip:3100
   apiKey: ${PAPERCLIP_API_KEY}
   sharedSecret: ${EG_PAPERCLIP_SECRET}        # used to verify /run calls
+  labelDeferred: false                       # opt-in waiting-for-local label (see §6)
 
 agents:                                       # tier is decided HERE, not by the caller
   agent_inbox:    { tier: private }
@@ -198,7 +204,7 @@ Node selection when `local`: prefer nodes marked `prefer: true` that are `availa
 1. Verify auth. Parse the Paperclip payload through the adapter layer (§7) into `TaskContext`. Tier comes from `agents` config; unknown agent → `private`.
 2. `decide()`.
 3. `local` / `cloud`: forward the original payload to the chosen runner and record the in-flight run (`runs` table: runId, issueId, agentId, target, node, startedAt, status). Return the runner's response to Paperclip, or the async acknowledgement Paperclip expects (verify, §7).
-4. `defer`: persist to the `deferred` table **first**, optionally post a comment on the issue and add the label `waiting-for-local` via the Paperclip API, notify, then return a **success** response so Paperclip does not count a failure.
+4. `defer`: persist to the `deferred` table **first**, post a comment on the issue (and, if `paperclip.labelDeferred` is on, add the label `waiting-for-local`) via the Paperclip API, notify, then return a **success** response so Paperclip does not count a failure.
 
 ### Presence handling
 
@@ -210,6 +216,10 @@ Node selection when `local`: prefer nodes marked `prefer: true` that are `availa
 ### Notifier
 
 Events: `node_offline`, `node_online`, `task_deferred`, `queue_drained`, `run_interrupted`, `deferred_expired`. Telegram + generic webhook. Coalesce bursts: at most 1 message per event type per node per 60 s.
+
+### Crash safety
+
+Every run records `origin` (`ingress`: a Paperclip request waits on it; `replacement`: created by recovery) and `dispatched_at` (set immediately before the request to the runner). At startup, before listening, runs still `running` are reconciled. Ingress runs are marked `failed`: Paperclip saw the dropped connection and retries on its next heartbeat. Replacement runs are re-decided and re-sent (at-least-once). Every forward carries `Idempotency-Key: ebbgate-run-<root run id>` so a runner can deduplicate a re-send of work it already received.
 
 ### Storage
 

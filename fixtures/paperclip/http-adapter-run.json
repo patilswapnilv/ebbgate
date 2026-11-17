@@ -1,0 +1,13 @@
+{
+  "_comment": "Assumed shape of Paperclip http adapter POST body. Confirmed fields: runId, agentId, context.taskId, context.wakeReason, context.commentId, connectionInstructions. TODO(verify-paperclip): whether context includes companyId and labels.",
+  "runId": "run-123",
+  "agentId": "agent-ops",
+  "context": {
+    "taskId": "issue-123",
+    "companyId": "company-1",
+    "wakeReason": "issue_assigned",
+    "commentId": null,
+    "labels": ["local-files"]
+  },
+  "connectionInstructions": null
+}

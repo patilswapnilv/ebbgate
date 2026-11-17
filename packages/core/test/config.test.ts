@@ -54,6 +54,9 @@ describe("loading the example config", () => {
     const config = parseConfig(baseRaw([privateLocal, defaultCloud]));
     expect(config.server.port).toBe(8790);
     expect(config.agents).toEqual({});
+    expect(config.paperclip.labelDeferred).toBe(false);
+    expect(config.server.host).toBe("127.0.0.1");
+    expect(config.server.maxBodyBytes).toBe(1024 * 1024);
     expect(config.presence).toEqual({
       offlineAfterSeconds: 90,
       drainConcurrency: 2,
@@ -211,5 +214,24 @@ describe("deriveState", () => {
     expect(deriveState(report("mini", { mode: "available", onBattery: true }), seen, now, 90)).toBe(
       "available",
     );
+  });
+});
+
+describe("YAML syntax errors", () => {
+  it("never quote the offending source (which may hold a secret)", () => {
+    const secret = "sk-live-SUPER-SECRET-0123456789";
+    const yaml = `server:\n  port: 8790\npaperclip:\n  apiKey: "${secret}\n  broken: [\n`;
+    try {
+      loadConfig(yaml, {});
+      throw new Error("expected a ConfigError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigError);
+      const text = `${(err as Error).message}\n${(err as Error).stack ?? ""}\n${JSON.stringify(
+        (err as ConfigError).issues,
+      )}`;
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain("SUPER-SECRET");
+      expect((err as ConfigError).issues[0]?.message).toMatch(/^YAML parse error \(\w+\)/);
+    }
   });
 });

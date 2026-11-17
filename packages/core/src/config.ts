@@ -53,7 +53,26 @@ export const configSchema = z
     server: z
       .object({
         port: z.number().int().min(1).max(65535).default(8790),
+        /** Bind address. Loopback by default; use 0.0.0.0 inside a container. */
+        host: z.string().min(1).default("127.0.0.1"),
         publicUrl: z.url(),
+        /**
+         * Upper bound for one forward to a runner, including reading its response
+         * body. A runner that stalls is treated as failed after this long.
+         */
+        runnerTimeoutMs: z
+          .number()
+          .int()
+          .min(1_000)
+          .max(24 * 3600 * 1000)
+          .default(10 * 60 * 1000),
+        /** Largest request body the dispatcher will read, in bytes. */
+        maxBodyBytes: z
+          .number()
+          .int()
+          .min(1024)
+          .max(16 * 1024 * 1024)
+          .default(1024 * 1024),
       })
       .strict(),
     nodes: z
@@ -74,6 +93,13 @@ export const configSchema = z
         apiUrl: z.url(),
         apiKey: z.string().min(1),
         sharedSecret: secretSchema,
+        /**
+         * Also add a `waiting-for-local` label to deferred issues. Off by default:
+         * Paperclip can only replace an issue's whole label set and offers no
+         * conditional update, so a label written by someone else at the same moment
+         * could be lost. The deferral comment (append-only) is always posted.
+         */
+        labelDeferred: z.boolean().default(false),
       })
       .strict(),
     agents: z.record(z.string().min(1), z.object({ tier: tierSchema }).strict()).default({}),
@@ -260,6 +286,22 @@ export function parseConfig(
   return result.data;
 }
 
+/**
+ * Describe a YAML syntax error by code and position only. The parser's own
+ * message quotes the offending source line, which may hold a secret, so it is
+ * never passed through.
+ */
+function describeYamlError(err: unknown): string {
+  const e = err as { code?: unknown; linePos?: Array<{ line?: number; col?: number }> };
+  const code = typeof e?.code === "string" ? e.code : "SYNTAX_ERROR";
+  const pos = Array.isArray(e?.linePos) ? e.linePos[0] : undefined;
+  const where =
+    pos && typeof pos.line === "number" && typeof pos.col === "number"
+      ? ` at line ${pos.line}, column ${pos.col}`
+      : "";
+  return `YAML parse error (${code})${where}`;
+}
+
 /** Parse and validate a YAML config string. Throws `ConfigError`. */
 export function loadConfig(
   yamlText: string,
@@ -267,9 +309,9 @@ export function loadConfig(
 ): EbbgateConfig {
   let raw: unknown;
   try {
-    raw = parseYaml(yamlText);
+    raw = parseYaml(yamlText, { prettyErrors: false });
   } catch (err) {
-    throw new ConfigError([{ path: "", message: `YAML parse error: ${(err as Error).message}` }]);
+    throw new ConfigError([{ path: "", message: describeYamlError(err) }]);
   }
   return parseConfig(raw, env);
 }

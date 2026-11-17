@@ -13,4 +13,9 @@ export {
   validatePrivacy,
 } from "./config.js";
 export { decide, deriveState, resolveTier } from "./policy.js";
+export {
+  type PresenceReportResult,
+  parsePresenceReport,
+  presenceReportSchema,
+} from "./presence.js";
 export * from "./types.js";

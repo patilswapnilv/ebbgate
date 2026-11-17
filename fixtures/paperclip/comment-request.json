@@ -1,0 +1,4 @@
+{
+  "_comment": "POST /api/issues/{issueId}/comments — confirmed by docs.paperclip.ing/reference/api/issues/",
+  "body": "Ebbgate: deferred until a local node is available (waiting-for-local)."
+}
