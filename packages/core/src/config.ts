@@ -56,6 +56,16 @@ export const configSchema = z
         /** Bind address. Loopback by default; use 0.0.0.0 inside a container. */
         host: z.string().min(1).default("127.0.0.1"),
         publicUrl: z.url(),
+        /**
+         * Upper bound for one forward to a runner, including reading its response
+         * body. A runner that stalls is treated as failed after this long.
+         */
+        runnerTimeoutMs: z
+          .number()
+          .int()
+          .min(1_000)
+          .max(24 * 3600 * 1000)
+          .default(10 * 60 * 1000),
         /** Largest request body the dispatcher will read, in bytes. */
         maxBodyBytes: z
           .number()

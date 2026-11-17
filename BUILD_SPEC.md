@@ -127,6 +127,7 @@ server:
                            # a private (e.g. Tailscale) IP.
   publicUrl: http://cloud:8790
   maxBodyBytes: 1048576    # larger request bodies get HTTP 413
+  runnerTimeoutMs: 600000   # bound for one runner forward, body included
 
 nodes:
   mini: { runner: http://mini:8787, token: ${EG_NODE_MINI_TOKEN} }
@@ -215,6 +216,10 @@ Node selection when `local`: prefer nodes marked `prefer: true` that are `availa
 ### Notifier
 
 Events: `node_offline`, `node_online`, `task_deferred`, `queue_drained`, `run_interrupted`, `deferred_expired`. Telegram + generic webhook. Coalesce bursts: at most 1 message per event type per node per 60 s.
+
+### Crash safety
+
+Every run records `origin` (`ingress`: a Paperclip request waits on it; `replacement`: created by recovery) and `dispatched_at` (set immediately before the request to the runner). At startup, before listening, runs still `running` are reconciled. Ingress runs are marked `failed`: Paperclip saw the dropped connection and retries on its next heartbeat. Replacement runs are re-decided and re-sent (at-least-once). Every forward carries `Idempotency-Key: ebbgate-run-<root run id>` so a runner can deduplicate a re-send of work it already received.
 
 ### Storage
 

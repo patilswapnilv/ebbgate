@@ -20,14 +20,17 @@ import {
   persistDeferred,
   releaseStaleClaims,
 } from "./queue.js";
-import { forwardToRunner } from "./runner.js";
+import { forwardToRunner, idempotencyKeyFor } from "./runner.js";
 import {
   claimInterruptedRuns,
   finishRun,
   insertRunning,
   listUnrecoveredRuns,
+  markDispatched,
   markRecovered,
+  type OrphanReport,
   type RunRow,
+  reconcileOrphanedRuns,
   recordDecision,
 } from "./runs.js";
 
@@ -51,6 +54,11 @@ export interface PresenceService {
    * the offline transition, at startup and on every tick; passes are serialized.
    */
   recoverInterrupted(): Promise<void>;
+  /**
+   * Startup only, before listening: close out runs a previous process left
+   * `running`, then recover them. Returns what was found.
+   */
+  reconcileAfterRestart(): Promise<OrphanReport>;
   listNodeStatuses(): NodeStatus[];
   ensureConfiguredNodes(): void;
 }
@@ -80,9 +88,29 @@ export function createPresenceService(deps: {
     return db.prepare(`SELECT * FROM nodes WHERE id = ?`).get(id) as NodeRow | undefined;
   }
 
+  /**
+   * Every configured node with its state derived from its heartbeat *now*, using
+   * the same freshness rules as tick(). The stored `state` column can be stale
+   * (for example right after a restart, before the first tick), so routing never
+   * trusts it.
+   */
   function listNodeStatuses(): NodeStatus[] {
     const rows = db.prepare(`SELECT * FROM nodes`).all() as NodeRow[];
-    return rows.filter((r) => config.nodes[r.id] !== undefined).map((r) => rowToStatus(r));
+    const at = now();
+    return rows
+      .filter((r) => config.nodes[r.id] !== undefined)
+      .map((r) => {
+        const status = rowToStatus(r);
+        return {
+          ...status,
+          state: deriveState(
+            status.report,
+            r.last_seen_at,
+            at,
+            config.presence.offlineAfterSeconds,
+          ),
+        };
+      });
   }
 
   function rowToStatus(row: NodeRow): NodeStatus {
@@ -217,9 +245,11 @@ export function createPresenceService(deps: {
     }
 
     const task = recoveryTask(run, payload);
-    // Re-decide with the current view of every node (the dropped one is offline).
+    // Re-decide with every node's live state. If the run was lost because its node
+    // dropped, that node also counts as offline even if a heartbeat is still fresh.
+    const nodeDropped = run.interrupted_reason !== "dispatcher_restart";
     const nodes = listNodeStatuses().map((n) =>
-      n.node === nodeId ? { ...n, state: "offline" as const } : n,
+      nodeDropped && n.node === nodeId ? { ...n, state: "offline" as const } : n,
     );
     const decision = decide(task, nodes, config);
     const decidedAt = now().toISOString();
@@ -295,12 +325,17 @@ export function createPresenceService(deps: {
           : {}),
         startedAt: decidedAt,
         payload,
+        origin: "replacement",
       });
       markRecovered(db, run.run_id, decidedAt);
     })();
 
     try {
-      const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn);
+      markDispatched(db, replacementId, now().toISOString());
+      const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn, {
+        timeoutMs: config.server.runnerTimeoutMs,
+        idempotencyKey: idempotencyKeyFor(run.run_id),
+      });
       const ok = result.status >= 200 && result.status < 300;
       if (!ok) {
         logger.warn(
@@ -358,6 +393,30 @@ export function createPresenceService(deps: {
     listNodeStatuses,
     drain,
     recoverInterrupted,
+
+    async reconcileAfterRestart(): Promise<OrphanReport> {
+      const report = reconcileOrphanedRuns(db, now().toISOString());
+      if (report.failedIngress.length > 0) {
+        logger.warn(
+          { runs: report.failedIngress },
+          "runs in flight at the last shutdown marked failed; Paperclip retries them on its next heartbeat",
+        );
+      }
+      if (report.neverDispatched.length > 0) {
+        logger.info(
+          { runs: report.neverDispatched },
+          "replacement runs never sent before the last shutdown; dispatching them now",
+        );
+      }
+      if (report.outcomeUnknown.length > 0) {
+        logger.warn(
+          { runs: report.outcomeUnknown },
+          "replacement runs with unknown outcome re-dispatched with the same Idempotency-Key (at-least-once)",
+        );
+      }
+      await recoverInterrupted();
+      return report;
+    },
 
     async applyReport(report: PresenceReport): Promise<void> {
       if (!config.nodes[report.node]) throw new Error(`unknown node: ${report.node}`);

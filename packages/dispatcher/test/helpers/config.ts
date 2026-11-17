@@ -5,16 +5,26 @@ export function testConfig(args: {
   cloudRunner: string;
   offlineAfterSeconds?: number;
   labelDeferred?: boolean;
+  /** Add a second node ("mbp") pointing at this runner. */
+  secondRunner?: string;
+  runnerTimeoutMs?: number;
 }): EbbgateConfig {
   return parseConfig(
     {
-      server: { port: 8790, publicUrl: "http://127.0.0.1:8790" },
+      server: {
+        port: 8790,
+        publicUrl: "http://127.0.0.1:8790",
+        ...(args.runnerTimeoutMs ? { runnerTimeoutMs: args.runnerTimeoutMs } : {}),
+      },
       nodes: {
         mini: {
           runner: args.localRunner,
           token: "mini-token-0123456789abcdef",
           prefer: true,
         },
+        ...(args.secondRunner
+          ? { mbp: { runner: args.secondRunner, token: "mbp-token-0123456789abcdef" } }
+          : {}),
       },
       cloud: { runner: args.cloudRunner },
       paperclip: {

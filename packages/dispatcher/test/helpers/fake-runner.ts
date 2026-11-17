@@ -5,6 +5,10 @@ export interface FakeRunner {
   hits: unknown[];
   /** Status the runner answers with (default 200). */
   status: number;
+  /** Send headers and part of the body, then never finish the response. */
+  stallBody: boolean;
+  /** Request headers received, in order. */
+  headers: Array<Record<string, string | string[] | undefined>>;
   /** When set, responses wait until `release()` is called. */
   hold(): void;
   release(): void;
@@ -23,6 +27,8 @@ export async function startFakeRunner(label: string): Promise<FakeRunner> {
   const runner: Omit<FakeRunner, "url" | "close"> = {
     hits,
     status: 200,
+    stallBody: false,
+    headers: [],
     hold() {
       gate = new Promise((resolve) => {
         openGate = resolve;
@@ -51,9 +57,15 @@ export async function startFakeRunner(label: string): Promise<FakeRunner> {
       } catch {
         hits.push({ _raw: raw, _label: label });
       }
+      runner.headers.push({ ...req.headers });
       for (const w of hitWaiters.filter((w) => hits.length >= w.n)) w.resolve();
 
       if (gate) await gate;
+      if (runner.stallBody) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.write('{"partial":');
+        return; // never end
+      }
       res.statusCode = runner.status;
       if (runner.status === 204 || runner.status === 304) {
         res.end();

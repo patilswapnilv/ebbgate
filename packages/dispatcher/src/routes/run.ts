@@ -5,8 +5,8 @@ import { bearerMatches } from "../auth.js";
 import { ParseError } from "../paperclip/parse.js";
 import { persistDeferred } from "../services/queue.js";
 import { relayResponse } from "../services/relay.js";
-import { forwardToRunner } from "../services/runner.js";
-import { finishRun, insertRunning, recordDecision } from "../services/runs.js";
+import { forwardToRunner, idempotencyKeyFor } from "../services/runner.js";
+import { finishRun, insertRunning, markDispatched, recordDecision } from "../services/runs.js";
 
 export function runRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -127,7 +127,17 @@ export function runRoutes(): Hono<AppEnv> {
         payload: body,
       });
       try {
-        const result = await forwardToRunner(config.cloud.runner, body, c.req.raw.headers, fetchFn);
+        markDispatched(db, task.runId, now().toISOString());
+        const result = await forwardToRunner(
+          config.cloud.runner,
+          body,
+          c.req.raw.headers,
+          fetchFn,
+          {
+            timeoutMs: config.server.runnerTimeoutMs,
+            idempotencyKey: idempotencyKeyFor(task.runId),
+          },
+        );
         settle(task.runId, result.status);
         return relayResponse(result);
       } catch (err) {
@@ -155,7 +165,11 @@ export function runRoutes(): Hono<AppEnv> {
       payload: body,
     });
     try {
-      const result = await forwardToRunner(runnerUrl, body, c.req.raw.headers, fetchFn);
+      markDispatched(db, task.runId, now().toISOString());
+      const result = await forwardToRunner(runnerUrl, body, c.req.raw.headers, fetchFn, {
+        timeoutMs: config.server.runnerTimeoutMs,
+        idempotencyKey: idempotencyKeyFor(task.runId),
+      });
       settle(task.runId, result.status);
       return relayResponse(result);
     } catch (err) {

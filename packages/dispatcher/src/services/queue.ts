@@ -168,7 +168,21 @@ export async function drainDeferred(args: {
     const batch = toWake.slice(i, i + drainConcurrency);
     await Promise.all(
       batch.map(async (row) => {
-        if (!transitionPending(db, row.id, "waking", clock().toISOString())) return;
+        // Re-check age at claim time: earlier wakes in this drain may have taken long
+        // enough for this row to cross the limit since the scan.
+        const claimAt = clock();
+        if (claimAt.getTime() - new Date(row.created_at).getTime() > maxAgeMs) {
+          if (transitionPending(db, row.id, "expired")) {
+            result.expired += 1;
+            await notifier.notify(
+              "deferred_expired",
+              null,
+              `deferred run ${row.run_id} expired after ${deferredMaxAgeHours}h`,
+            );
+          }
+          return; // covered rows stay pending and get their own chance
+        }
+        if (!transitionPending(db, row.id, "waking", claimAt.toISOString())) return;
         try {
           await paperclip.wakeAgent({
             agentId: row.agent_id,

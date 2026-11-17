@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "smoke": "node scripts/smoke-startup.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
