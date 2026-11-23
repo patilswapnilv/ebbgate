@@ -14,6 +14,9 @@ import {
   UNKNOWN_AGENTS,
 } from "./harness.js";
 
+// Hundreds of property runs, each opening a fresh SQLite harness: slow on shared CI runners.
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 const agentArb = fc.oneof(
   { weight: 4, arbitrary: fc.constantFrom(...Object.keys(AGENTS)) },
   { weight: 2, arbitrary: fc.constantFrom(...UNKNOWN_AGENTS) },
@@ -73,33 +76,38 @@ const stepArb = fc.oneof(
 );
 
 describe("privacy guarantee: fuzzing /run", () => {
-  it("property: no sequence of requests, presence changes, clock moves and restarts leaks private work", async () => {
-    let cloudSeen = 0;
-    await fc.assert(
-      fc.asyncProperty(fc.array(stepArb, { minLength: 1, maxLength: 25 }), async (steps) => {
-        const h = harness();
-        try {
-          for (const step of steps) {
-            if (step.kind === "run") {
-              const res = await postRun(h, step.p);
-              expect([200, 202, 400, 500, 502]).toContain(res.status);
-            } else if (step.kind === "presence") {
-              await postPresence(h, step.node, { mode: step.mode, onBattery: step.onBattery });
-            } else if (step.kind === "clock") {
-              h.clock.now = new Date(h.clock.now.getTime() + step.ms);
-              await h.handle.tick();
-            } else {
-              await h.restart().presence.reconcileAfterRestart();
+  it(
+    "property: no sequence of requests, presence changes, clock moves and restarts leaks private work",
+    async () => {
+      let cloudSeen = 0;
+      await fc.assert(
+        fc.asyncProperty(fc.array(stepArb, { minLength: 1, maxLength: 25 }), async (steps) => {
+          const h = harness();
+          try {
+            for (const step of steps) {
+              if (step.kind === "run") {
+                const res = await postRun(h, step.p);
+                // 409: a re-submitted run id, deduplicated by the durable queue (#10).
+                expect([200, 202, 400, 409, 500, 502]).toContain(res.status);
+              } else if (step.kind === "presence") {
+                await postPresence(h, step.node, { mode: step.mode, onBattery: step.onBattery });
+              } else if (step.kind === "clock") {
+                h.clock.now = new Date(h.clock.now.getTime() + step.ms);
+                await h.handle.tick();
+              } else {
+                await h.restart().presence.reconcileAfterRestart();
+              }
             }
+            assertNoPrivateLeak(h);
+            cloudSeen += h.net.toCloud().length;
+          } finally {
+            h.close();
           }
-          assertNoPrivateLeak(h);
-          cloudSeen += h.net.toCloud().length;
-        } finally {
-          h.close();
-        }
-      }),
-      { numRuns: 150 },
-    );
-    expect(cloudSeen).toBeGreaterThan(0); // the cloud path was reachable during fuzzing
-  });
+        }),
+        { numRuns: 150 },
+      );
+      expect(cloudSeen).toBeGreaterThan(0); // the cloud path was reachable during fuzzing
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });
