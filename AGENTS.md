@@ -3,7 +3,7 @@
 Guidance for coding agents (Cursor, Claude Code, Codex) working on Ebbgate.
 
 1. Read `BUILD_SPEC.md` first. It is the source of truth for scope, architecture and milestones.
-2. Current status: **M2 in review** (`packages/dispatcher`, PR #1). Later milestones (M3 agent, M4 cli/compose, M5 docs/`EG_DEMO`) land as stacked PRs — one milestone per PR.
+2. Current status: **M1–M5 are on `main`** (core + policy, dispatcher, macOS presence agent + SwiftBar plugin, `ebbgate` CLI + compose quickstart, docs + `EG_DEMO`), released as v0.1.0 (see `CHANGELOG.md`). New work goes in small PRs against `main`; open Paperclip assumptions are marked `TODO(verify-paperclip)`.
 3. Work one milestone at a time and stop with a summary: what was built, test results, open `TODO(verify-paperclip)` items, decisions made.
 4. Never break the privacy invariants in spec §1. They are covered by tests in `packages/core/test/privacy.property.test.ts`; add equivalent tests for every new routing path.
 5. Do not invent Paperclip API shapes; see spec §7.
@@ -11,7 +11,7 @@ Guidance for coding agents (Cursor, Claude Code, Codex) working on Ebbgate.
 
 ## Branches and pull requests
 
-- **One milestone per PR.** Never push a new milestone onto an open PR. Start a branch named `cursor/m<N>-<topic>` from the previous milestone's branch (or `main` once it is merged) and open a PR against it.
+- **One milestone per PR.** Never push a new milestone onto an open PR. Start a branch from `main` (or from the branch it depends on, for stacked work) and open a PR against it; say in the PR description when it is stacked.
 - Review fixes for a milestone go on that milestone's branch. If later milestones are stacked on top, rebase them afterwards.
 
 ## Workspace packages

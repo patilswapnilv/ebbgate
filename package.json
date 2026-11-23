@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "format": "biome format --write .",
+    "ebbgate": "node packages/cli/dist/cli.js",
     "smoke": "node scripts/smoke-startup.mjs"
   },
   "devDependencies": {
