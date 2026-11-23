@@ -46,7 +46,11 @@ Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./
 
 ## Prerequisites
 
-Ebbgate sits in front of [Paperclip](https://paperclip.ing) and talks to a local model runtime. If you are starting from a machine with nothing installed, follow **[Getting started](./docs/getting-started.md)** first — it is the "Before you start: install Paperclip" path, in order: Node.js 24.11+ (Ebbgate alone accepts 22, but Paperclip needs 24.11), Ollama and a model, a running Paperclip instance and a `PAPERCLIP_API_KEY`, then Ebbgate.
+Ebbgate sits in front of [Paperclip](https://paperclip.ing) and talks to a local model runtime. If you are starting from a machine with nothing installed, follow **[Getting started](./docs/getting-started.md)** first — it is the "Before you start: install Paperclip" path, in order:
+
+1. **Node.js 24.11+.** Ebbgate alone accepts Node 22, but Paperclip needs 24.11 or newer, so install that once for both.
+2. **A running Paperclip instance and a `PAPERCLIP_API_KEY`.** Use Paperclip's own [installation guide](https://docs.paperclip.ing/guides/getting-started/installation/); Getting started links each official step.
+3. **Ollama and a model.** Optional to do by hand: `ebbgate init` offers to install Ollama and pull a small model for you (below).
 
 The demo at the top of this README needs none of that. From a machine that already has the prerequisites, the Quickstart below takes about five minutes. A clean machine is closer to an hour, mostly the model download and Paperclip setup. Those times are estimates; we have not timed a clean-machine run yet.
 
@@ -60,24 +64,24 @@ npx ebbgate init && npx ebbgate doctor
 
 `init` asks a few questions (or takes secure defaults with `--yes`) and writes:
 
-| File                                  | What                                                                                                                                                                    |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ebbgate.yaml`                        | A minimal policy. No cloud runner, so nothing leaves your machines; agents you don't list are private; private work waits for your Mac.                                 |
-| `.env`                                | Generated `EG_PAPERCLIP_SECRET` and node token, **mode 600**, never printed in full. Add `PAPERCLIP_API_KEY` here (or have it in your environment when you run `init`). |
-| `.env.example`, `litellm.config.yaml` | Templates for Docker Compose and LiteLLM.                                                                                                                               |
+| File                                  | What                                                                                                                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ebbgate.yaml`                        | A minimal policy. No cloud runner, so nothing leaves your machines; agents you don't list are private; private work waits for your Mac. A `local:` section records your Ollama URL and model. |
+| `.env`                                | Generated `EG_PAPERCLIP_SECRET` and node token, **mode 600**, never printed in full. Add `PAPERCLIP_API_KEY` here (or have it in your environment when you run `init`).                       |
+| `.env.example`, `litellm.config.yaml` | Templates for Docker Compose and LiteLLM.                                                                                                                                                     |
 
-No Ollama yet? `init` offers to install it (`brew install ollama` on macOS, or the [download page](https://ollama.com/download) without Homebrew; the official install script on Linux, only after you say yes) and to pull a small default model, `llama3.2` (about 2 GB; choose another with `--model`). It records the model in `ebbgate.yaml`. `--yes` accepts, `--no-ollama` skips, and without a terminal (CI) nothing is installed.
+No Ollama yet? `init` offers to install and start it (`brew install ollama && brew services start ollama` on macOS, or the [download page](https://ollama.com/download) without Homebrew; on Linux the official install script, which only runs after you type yes yourself) and to pull a small default model, `llama3.2` (about 2 GB; choose another with `--model`). It records the Ollama URL and model in the `local:` section of `ebbgate.yaml`, which `doctor` uses to check that the model is pulled. `--yes` accepts (except the Linux install script), `--no-ollama` skips, and without a terminal (CI) nothing is installed unless you pass `--yes`.
 
 You don't edit any YAML to get started. `doctor` then checks everything and prints one line per check with the fix:
 
 ```text
-PASS  Node.js             v22.12.0
+PASS  Node.js             v24.11.0
 PASS  Config              ./ebbgate.yaml is valid
 PASS  Secrets file        ./.env (mode 600)
 FAIL  Dispatcher          http://127.0.0.1:8790 not reachable (ECONNREFUSED)
-                          fix: start the dispatcher (README → Quickstart), or set EBBGATE_DISPATCHER_URL
+                          fix: start it: `ebbgate serve` in the folder with ebbgate.yaml (or set EBBGATE_DISPATCHER_URL)
 WARN  Presence heartbeat  skipped: dispatcher status unavailable
-PASS  Ollama              http://127.0.0.1:11434 (3 model(s))
+PASS  Ollama              http://127.0.0.1:11434 (1 model(s))
 PASS  Cloud runner        none configured: nothing leaves your machines (work waits for a local node)
 PASS  SQLite queue        ./data/ebbgate.db is writable
 PASS  Paperclip           http://127.0.0.1:3100 is reachable
@@ -101,15 +105,15 @@ It also checks dispatcher auth and the Paperclip key. Add `--json` for scripts; 
    ebbgate runner          # local runner shim on :8787 (separate terminal)
    ```
 
-   `ebbgate agent uninstall` removes it.
+   It reports to the dispatcher at `server.publicUrl` from `ebbgate.yaml` by default (override with `--dispatcher URL`). `ebbgate agent uninstall` removes it.
 
-3. **Point Paperclip at it.** Set the agent's `http` adapter to `http://127.0.0.1:8790/run` with `Authorization: Bearer <EG_PAPERCLIP_SECRET from .env>`.
+3. **Point Paperclip at it.** Set the agent's `http` adapter to the `/run` URL `ebbgate serve` printed (`http://127.0.0.1:8790/run` by default) with `Authorization: Bearer <EG_PAPERCLIP_SECRET from .env>`. Paperclip blocks loopback addresses until you allowlist them; the exact steps are in [Getting started → Point Paperclip's `http` adapter at Ebbgate](./docs/getting-started.md#point-paperclips-http-adapter-at-ebbgate).
 
 4. **Run `ebbgate doctor` again**: all PASS.
 
 Want non-private work to spill over to the cloud when your Mac is away? Re-run `npx ebbgate init --force --cloud-runner https://…`. Existing secrets are kept, and private work still never goes there.
 
-> Until the npm package is published, run the same commands from a checkout: `pnpm install && pnpm build`, then `pnpm ebbgate init`, `pnpm ebbgate doctor`, `pnpm ebbgate agent install`.
+> Until the npm package is published, run the same commands from a checkout: `pnpm install && pnpm build`, then `pnpm ebbgate init`, `pnpm ebbgate doctor`, `pnpm ebbgate serve`, `pnpm ebbgate agent install`.
 
 ### Other setups: Docker Compose, more machines
 
@@ -144,7 +148,7 @@ Full compose notes: [`examples/compose/README.md`](./examples/compose/README.md)
 ### Demo logging
 
 ```bash
-EG_DEMO=1 node packages/dispatcher/dist/index.js
+EG_DEMO=1 ebbgate serve
 ```
 
 Prints plain-text decision blocks (no secrets) — handy for screen recordings.
