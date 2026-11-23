@@ -171,6 +171,20 @@ export const configSchema = z
         leaseSeconds: 300,
         shutdownGraceSeconds: 10,
       }),
+    /**
+     * Optional. The local model setup written by `ebbgate init`. Informational for
+     * the dispatcher; `ebbgate doctor` uses it to check Ollama and the model.
+     */
+    local: z
+      .object({
+        ollamaUrl: z.url().optional(),
+        model: z
+          .string()
+          .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/, "invalid model name")
+          .optional(),
+      })
+      .strict()
+      .optional(),
     notify: z
       .object({
         telegram: z.object({ botToken: z.string().min(1), chatId: z.string().min(1) }).strict(),

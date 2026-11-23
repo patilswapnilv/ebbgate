@@ -23,14 +23,17 @@ async function main(argv: string[]): Promise<void> {
     const publicUrl = flag(args, "--public-url");
     const cloudRunner = flag(args, "--cloud-runner");
     const paperclipApiUrl = flag(args, "--paperclip-url");
+    const model = flag(args, "--model");
     const result = await runInit({
       yes,
       force,
+      ollama: ollamaMode(args, yes),
       answers: {
         ...(node ? { nodes: [{ id: node, prefer: true }] } : {}),
         ...(publicUrl ? { publicUrl } : {}),
         ...(cloudRunner ? { cloudRunner } : {}),
         ...(paperclipApiUrl ? { paperclipApiUrl } : {}),
+        ...(model ? { model } : {}),
       },
     });
     if (yes) {
@@ -77,8 +80,9 @@ async function main(argv: string[]): Promise<void> {
 Usage:
   ebbgate demo [--fast]          60-second simulation, no setup needed
   ebbgate init [--yes] [--force] [--node ID] [--public-url URL] [--cloud-runner URL]
-               [--paperclip-url URL]
-                                 write ebbgate.yaml + .env (secrets, mode 600)
+               [--paperclip-url URL] [--model NAME] [--no-ollama]
+                                 write ebbgate.yaml + .env (secrets, mode 600); offers to
+                                 install Ollama and pull a small model (--yes accepts)
   ebbgate doctor [--json] [--config PATH]
                                  check the setup; exit 1 on any failure
   ebbgate admit --node <id> | --remote [--agent <id>] [--private]
@@ -96,6 +100,28 @@ Usage:
 
   // Delegate local node commands to @ebbgate/agent
   await runAgentCli(argv);
+}
+
+/**
+ * Ollama setup: --no-ollama skips, --yes accepts (except a remote install script,
+ * which always needs an interactive yes), a terminal asks, and anything else
+ * (pipes, CI) skips with a message.
+ */
+export function ollamaMode(
+  args: string[],
+  yes: boolean,
+  interactive: boolean = Boolean(process.stdin.isTTY && process.stdout.isTTY) && !process.env.CI,
+): { mode: "ask" | "accept" | "skip"; skipReason?: string } {
+  if (args.includes("--no-ollama")) {
+    return { mode: "skip", skipReason: "Skipping Ollama setup (--no-ollama)." };
+  }
+  if (yes) return { mode: "accept" };
+  if (interactive) return { mode: "ask" };
+  return {
+    mode: "skip",
+    skipReason:
+      "Not an interactive terminal, so init won't install anything. Re-run with --yes to accept.",
+  };
 }
 
 function flag(args: string[], name: string): string | undefined {
