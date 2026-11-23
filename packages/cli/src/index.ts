@@ -30,4 +30,16 @@ export {
   type InitResult,
   runInit,
 } from "./init.js";
+export {
+  DEFAULT_OLLAMA_MODEL,
+  type InstallPlan,
+  type OllamaSetupMode,
+  type OllamaSetupOptions,
+  type OllamaSetupResult,
+  ollamaInstallHint,
+  type ProcessRunner,
+  planOllamaInstall,
+  setupOllama,
+  systemRunner,
+} from "./ollama-setup.js";
 export { listPaperclipAgents } from "./paperclip-agents.js";

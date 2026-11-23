@@ -60,6 +60,8 @@ npx ebbgate init && npx ebbgate doctor
 | `.env`                                | Generated `EG_PAPERCLIP_SECRET` and node token, **mode 600**, never printed in full. Add `PAPERCLIP_API_KEY` here (or have it in your environment when you run `init`). |
 | `.env.example`, `litellm.config.yaml` | Templates for Docker Compose and LiteLLM.                                                                                                                               |
 
+No Ollama yet? `init` offers to install it (`brew install ollama` on macOS, or the [download page](https://ollama.com/download) without Homebrew; the official install script on Linux, only after you say yes) and to pull a small default model, `llama3.2` (about 2 GB; choose another with `--model`). It records the model in `ebbgate.yaml`. `--yes` accepts, `--no-ollama` skips, and without a terminal (CI) nothing is installed.
+
 You don't edit any YAML to get started. `doctor` then checks everything and prints one line per check with the fix:
 
 ```text
