@@ -14,6 +14,15 @@ import {
   SECRETS_FILE,
   writeSecretsFile,
 } from "./generate/secrets-file.js";
+import {
+  DEFAULT_OLLAMA_MODEL,
+  isValidModelName,
+  type OllamaSetupMode,
+  type OllamaSetupResult,
+  type ProcessRunner,
+  setupOllama,
+  systemRunner,
+} from "./ollama-setup.js";
 import { listPaperclipAgents } from "./paperclip-agents.js";
 
 export interface InitOptions {
@@ -26,6 +35,20 @@ export interface InitOptions {
   /** Process environment (PAPERCLIP_API_KEY is picked up from here). */
   env?: NodeJS.ProcessEnv;
   answers?: Partial<InitAnswers> & { companyId?: string; paperclipApiKey?: string };
+  /**
+   * Offer to install/start Ollama and pull the default model. Defaults to "skip"
+   * so library callers and tests never run installers; the CLI picks the mode.
+   */
+  ollama?: {
+    mode: OllamaSetupMode;
+    skipReason?: string;
+    runner?: ProcessRunner;
+    platform?: NodeJS.Platform;
+    log?: (line: string) => void;
+    confirm?: (message: string) => Promise<boolean>;
+    sleep?: (ms: number) => Promise<void>;
+    waitMs?: number;
+  };
 }
 
 export interface InitResult {
@@ -37,6 +60,8 @@ export interface InitResult {
   nodeSecrets: Record<string, string>;
   /** Human-readable summary with every secret masked. Safe to print. */
   summary: string;
+  /** Result of the Ollama/model step (undefined if it was not run). */
+  ollama?: OllamaSetupResult;
 }
 
 const TIERS: Tier[] = ["private", "internal", "public"];
@@ -123,6 +148,32 @@ export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
         DETECT_DEFAULTS.paperclip,
       );
     }
+  }
+
+  const model = opts.answers?.model ?? DEFAULT_OLLAMA_MODEL;
+  if (!isValidModelName(model)) throw new Error(`invalid model name: ${model}`);
+
+  let ollama: OllamaSetupResult | undefined;
+  if (opts.ollama) {
+    const o = opts.ollama;
+    ollama = await setupOllama({
+      ollamaUrl,
+      model,
+      mode: o.mode,
+      ...(o.skipReason ? { skipReason: o.skipReason } : {}),
+      runner: o.runner ?? systemRunner,
+      platform: o.platform ?? process.platform,
+      fetch: fetchFn,
+      log: o.log ?? (opts.yes ? (l) => console.log(l) : (l) => p.log.info(l)),
+      confirm:
+        o.confirm ??
+        (async (message) => {
+          const ok = await p.confirm({ message, initialValue: true });
+          return !p.isCancel(ok) && ok === true;
+        }),
+      ...(o.sleep ? { sleep: o.sleep } : {}),
+      ...(o.waitMs !== undefined ? { waitMs: o.waitMs } : {}),
+    });
   }
 
   let nodeIds = opts.answers?.nodes?.map((n) => n.id) ?? [defaultNodeId()];
@@ -248,6 +299,7 @@ export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
     ...(cloudRunner ? { cloudRunner } : {}),
     paperclipApiUrl,
     ollamaUrl,
+    model,
     litellmUrl,
     agents,
     includeNotifyPlaceholders: opts.answers?.includeNotifyPlaceholders ?? true,
@@ -274,7 +326,7 @@ export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
     write(cwd, "ebbgate.yaml", renderEbbgateYaml(answers)),
     secretsPath,
     write(cwd, ".env.example", renderEnvExample(answers.nodes)),
-    write(cwd, "litellm.config.yaml", renderLitellmConfig(answers.ollamaUrl)),
+    write(cwd, "litellm.config.yaml", renderLitellmConfig(answers.ollamaUrl, model)),
   ];
   const gitignored = ensureGitignored(cwd, SECRETS_FILE);
 
@@ -285,6 +337,7 @@ export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
     nodeSecrets,
     hasPaperclipKey: Boolean(paperclipApiKey),
     gitignored,
+    ...(ollama ? { ollama } : {}),
   });
 
   if (!opts.yes) {
@@ -292,7 +345,15 @@ export async function runInit(opts: InitOptions = {}): Promise<InitResult> {
     p.outro("Next: ebbgate doctor");
   }
 
-  return { files, answers, secretsFile: secretsPath, sharedSecret, nodeSecrets, summary };
+  return {
+    files,
+    answers,
+    secretsFile: secretsPath,
+    sharedSecret,
+    nodeSecrets,
+    summary,
+    ...(ollama ? { ollama } : {}),
+  };
 }
 
 function renderSummary(a: {
@@ -302,6 +363,7 @@ function renderSummary(a: {
   nodeSecrets: Record<string, string>;
   hasPaperclipKey: boolean;
   gitignored: boolean;
+  ollama?: OllamaSetupResult;
 }): string {
   const firstNode = a.answers.nodes[0]?.id ?? "mini";
   const lines = [
@@ -315,6 +377,10 @@ function renderSummary(a: {
       ? `Cloud runner: ${a.answers.cloudRunner} (non-private work may run there)`
       : "Cloud runner: none. Nothing leaves your machines; work waits for a local node.",
     "Unknown agents: treated as private.",
+    `Local model: ${a.answers.model ?? DEFAULT_OLLAMA_MODEL} on ${a.answers.ollamaUrl}${
+      a.ollama?.outcome === "ready" ? " (ready)" : ""
+    }`,
+    ...(a.ollama?.hints ?? []).map((h) => `  to do: ${h}`),
     "",
     "Paperclip http adapter:",
     `  url: ${a.answers.publicUrl.replace(/\/$/, "")}/run`,

@@ -3,6 +3,13 @@ import { dirname, resolve } from "node:path";
 import { parseEnvFile } from "@ebbgate/agent";
 import { ConfigError, type EbbgateConfig, loadConfig } from "@ebbgate/core";
 import { SECRETS_FILE } from "./generate/secrets-file.js";
+import {
+  DEFAULT_OLLAMA_MODEL,
+  hasModel,
+  ollamaInstallHint,
+  ollamaPullHint,
+  ollamaStartHint,
+} from "./ollama-setup.js";
 
 /**
  * `ebbgate doctor`: one line per check, each with a fix. Read-only apart from
@@ -37,6 +44,8 @@ export interface DoctorOptions {
   configPath?: string;
   /** Per-request timeout for network checks. */
   timeoutMs?: number;
+  /** Platform for install hints. Defaults to the running one. */
+  platform?: NodeJS.Platform;
 }
 
 export const MIN_NODE_MAJOR = 22;
@@ -50,6 +59,7 @@ interface Context {
   fetchFn: typeof fetch;
   now: () => Date;
   timeoutMs: number;
+  platform: NodeJS.Platform;
   configPath?: string;
   secretsPath?: string;
   /** Process env plus the secrets file (process env wins, as for the agent). */
@@ -67,6 +77,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
     fetchFn: opts.fetch ?? fetch,
     now: opts.now ?? (() => new Date()),
     timeoutMs: opts.timeoutMs ?? 2_000,
+    platform: opts.platform ?? process.platform,
     merged: { ...env },
     missingVars: new Set(),
   };
@@ -376,11 +387,19 @@ function checkHeartbeat(ctx: Context, nodes?: NodeStatusLite[]): CheckResult {
 
 async function checkOllama(ctx: Context): Promise<CheckResult> {
   const title = "Ollama";
-  const base = (ctx.merged.EBBGATE_OLLAMA_URL ?? DEFAULT_OLLAMA_URL).replace(/\/$/, "");
+  const base = (
+    ctx.merged.EBBGATE_OLLAMA_URL ??
+    ctx.config?.local?.ollamaUrl ??
+    DEFAULT_OLLAMA_URL
+  ).replace(/\/$/, "");
+  const model = ctx.config?.local?.model ?? DEFAULT_OLLAMA_MODEL;
   try {
     const res = await get(ctx, `${base}/api/tags`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json().catch(() => ({}))) as { models?: unknown[] };
+    const body = (await res.json().catch(() => ({}))) as { models?: Array<{ name?: unknown }> };
+    const names = Array.isArray(body.models)
+      ? body.models.map((m) => m?.name).filter((n): n is string => typeof n === "string")
+      : [];
     const count = Array.isArray(body.models) ? body.models.length : 0;
     if (count === 0) {
       return {
@@ -388,7 +407,16 @@ async function checkOllama(ctx: Context): Promise<CheckResult> {
         title,
         status: "warn",
         message: `${base} is up but has no models`,
-        fix: "pull one: `ollama pull llama3.2`",
+        fix: ollamaPullHint(model),
+      };
+    }
+    if (ctx.config?.local?.model && !hasModel(names, model)) {
+      return {
+        id: "ollama",
+        title,
+        status: "warn",
+        message: `${base} (${count} model(s)), but ${model} from ebbgate.yaml is not pulled`,
+        fix: ollamaPullHint(model),
       };
     }
     return { id: "ollama", title, status: "pass", message: `${base} (${count} model(s))` };
@@ -398,7 +426,7 @@ async function checkOllama(ctx: Context): Promise<CheckResult> {
       title,
       status: "warn",
       message: `${base} not reachable (${describe(err)}); local runs need a local model`,
-      fix: "install and start Ollama (`brew install ollama && ollama serve`), or set EBBGATE_OLLAMA_URL",
+      fix: `${ollamaInstallHint(ctx.platform)}, or let \`ebbgate init --force\` do it (secrets are kept). Already installed? ${ollamaStartHint(ctx.platform)}. Or set EBBGATE_OLLAMA_URL`,
     };
   }
 }
