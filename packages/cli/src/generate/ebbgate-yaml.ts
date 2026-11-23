@@ -1,3 +1,4 @@
+import { DEFAULT_OLLAMA_MODEL } from "../ollama-setup.js";
 import { envKeyForNodeToken } from "./secrets.js";
 
 export type Tier = "private" | "internal" | "public";
@@ -11,6 +12,8 @@ export interface InitAnswers {
   cloudRunner?: string;
   paperclipApiUrl: string;
   ollamaUrl: string;
+  /** Local Ollama model, e.g. "llama3.2". Defaults to DEFAULT_OLLAMA_MODEL. */
+  model?: string;
   litellmUrl: string;
   agents: Array<{ id: string; tier: Tier }>;
   includeNotifyPlaceholders: boolean;
@@ -75,6 +78,11 @@ paperclip:
   apiKey: "\${PAPERCLIP_API_KEY}"
   sharedSecret: "\${EG_PAPERCLIP_SECRET}"
   labelDeferred: false
+
+# Local model (Ollama). \`ebbgate doctor\` checks it is running and pulled.
+local:
+  ollamaUrl: ${a.ollamaUrl.replace(/\/$/, "")}
+  model: ${JSON.stringify(a.model ?? DEFAULT_OLLAMA_MODEL)}
 
 agents:
 ${agentLines}

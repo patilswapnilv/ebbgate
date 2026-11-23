@@ -7,7 +7,11 @@ import { onBattery } from "../src/collectors/battery.js";
 import { userIdleSeconds } from "../src/collectors/idle.js";
 import { COLLECTOR_TIMEOUT_MS } from "../src/collectors/limits.js";
 import { freeRamGb } from "../src/collectors/ram.js";
-import { buildLaunchAgentPlist, resolveInstallSettings } from "../src/install.js";
+import {
+  buildLaunchAgentPlist,
+  configDispatcherUrl,
+  resolveInstallSettings,
+} from "../src/install.js";
 import { DEFAULT_DISPATCHER_URL, DEFAULT_RUNNER_HOST, EBBGATE_DIR } from "../src/paths.js";
 import { buildPresenceReport, normalizeModels } from "../src/report.js";
 
@@ -97,6 +101,31 @@ describe("install settings are resolved and persisted", () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  it("defaults the dispatcher URL to server.publicUrl from the config", () => {
+    const cfg = join(dir, "pub.yaml");
+    writeFileSync(cfg, "server:\n  publicUrl: http://mini.tail:8790/\n");
+    expect(resolveInstallSettings({}, {}, { configPath: cfg }).dispatcherUrl).toBe(
+      "http://mini.tail:8790",
+    );
+    // Saved, env and explicit values still win.
+    expect(
+      resolveInstallSettings({}, {}, { configPath: cfg, dispatcherUrl: "http://saved:1" })
+        .dispatcherUrl,
+    ).toBe("http://saved:1");
+    expect(
+      resolveInstallSettings({ dispatcherUrl: "http://opt:1" }, {}, { configPath: cfg })
+        .dispatcherUrl,
+    ).toBe("http://opt:1");
+    // Values needing interpolation, or not http(s), fall back to the default.
+    writeFileSync(cfg, `server:\n  publicUrl: "\${PUBLIC_URL}"\n`);
+    expect(configDispatcherUrl(cfg)).toBeUndefined();
+    writeFileSync(cfg, "server:\n  publicUrl: ftp://x\n");
+    expect(configDispatcherUrl(cfg)).toBeUndefined();
+    expect(resolveInstallSettings({}, {}, { configPath: cfg }).dispatcherUrl).toBe(
+      DEFAULT_DISPATCHER_URL,
+    );
   });
 
   it("uses option -> environment -> saved value -> default, for every endpoint", () => {

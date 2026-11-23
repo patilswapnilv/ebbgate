@@ -191,7 +191,7 @@ describe("ebbgate doctor", () => {
 
   it("follows EBBGATE_OLLAMA_URL and EBBGATE_DISPATCHER_URL", async () => {
     const net = fakeNet({
-      "studio:11434/api/tags": () => Response.json({ models: [{}] }),
+      "studio:11434/api/tags": () => Response.json({ models: [{ name: "llama3.2:latest" }] }),
       "disp:9000/healthz": () => Response.json({ ok: true }),
     });
     const report = await doctor(net, {

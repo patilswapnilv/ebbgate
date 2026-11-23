@@ -66,6 +66,8 @@ npx ebbgate init && npx ebbgate doctor
 | `.env`                                | Generated `EG_PAPERCLIP_SECRET` and node token, **mode 600**, never printed in full. Add `PAPERCLIP_API_KEY` here (or have it in your environment when you run `init`). |
 | `.env.example`, `litellm.config.yaml` | Templates for Docker Compose and LiteLLM.                                                                                                                               |
 
+No Ollama yet? `init` offers to install it (`brew install ollama` on macOS, or the [download page](https://ollama.com/download) without Homebrew; the official install script on Linux, only after you say yes) and to pull a small default model, `llama3.2` (about 2 GB; choose another with `--model`). It records the model in `ebbgate.yaml`. `--yes` accepts, `--no-ollama` skips, and without a terminal (CI) nothing is installed.
+
 You don't edit any YAML to get started. `doctor` then checks everything and prints one line per check with the fix:
 
 ```text
@@ -83,13 +85,13 @@ PASS  Paperclip           http://127.0.0.1:3100 is reachable
 
 It also checks dispatcher auth and the Paperclip key. Add `--json` for scripts; it exits non-zero while anything fails. Work through it until it's green:
 
-1. **Start the dispatcher** (from a checkout for now), in the folder with `ebbgate.yaml`:
+1. **Start the dispatcher**, in the folder with `ebbgate.yaml` (leave it running in its own terminal):
 
    ```bash
-   git clone https://github.com/patilswapnilv/ebbgate.git ~/ebbgate
-   (cd ~/ebbgate && pnpm install && pnpm build)
-   node --env-file=.env ~/ebbgate/packages/dispatcher/dist/index.js
+   npx ebbgate serve       # loads ./ebbgate.yaml and ./.env; Ctrl-C stops it cleanly
    ```
+
+   It prints the URL it listens on and the `/run` URL for Paperclip. Use `--config PATH` / `--env PATH` for files elsewhere.
 
 2. **Install the presence agent on your Mac**, from the same folder. It's one command and runs under launchd:
 
