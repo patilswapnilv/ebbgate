@@ -18,8 +18,9 @@ export {
   type PolicyRule,
   parseConfig,
   validatePrivacy,
+  validateRunnerSeparation,
 } from "./config.js";
-export { decide, deriveState, resolveTier } from "./policy.js";
+export { decide, deriveState, mayRunInCloud, resolveTier } from "./policy.js";
 export {
   PRESENCE_LIMITS,
   type PresenceReportResult,
