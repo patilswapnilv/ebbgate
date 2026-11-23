@@ -80,7 +80,7 @@ Open [http://localhost:3100](http://localhost:3100) (Paperclip often opens it fo
 
 Install Node.js **24.11.0 or newer** and pnpm, as above. Ebbgate alone would accept Node 22, but you need 24.11+ for Paperclip.
 
-### 2. Ollama and a model — about 10–30 minutes (mostly the download)
+### 2. Ollama and a model — about 10–30 minutes (mostly the download; `ebbgate init` can do it)
 
 Ebbgate routes private and on-machine work to a local model runtime. [Ollama](https://ollama.com) is the default it checks for (`http://127.0.0.1:11434`).
 
@@ -92,7 +92,9 @@ Install Ollama from the official pages; do not improvise an installer:
 
 Then pull a model with the official CLI (`ollama pull <model>`). See the [Ollama quickstart](https://docs.ollama.com/quickstart) for current model names. Models are several GB, so this is usually the longest step.
 
-`ebbgate doctor` later checks that Ollama is reachable and has at least one model. A later change may offer to install Ollama from `ebbgate init`; until then, do this yourself.
+Or skip this step: `ebbgate init` offers to do it for you. On macOS it runs `brew install ollama && brew services start ollama` (or points you to the download page if you have no Homebrew); on Linux it runs the official install script, but only after you type yes yourself, never from `--yes`. It then pulls a small default model, `llama3.2` (about 2 GB; pick another with `--model NAME`), and records the Ollama URL and model in the `local:` section of `ebbgate.yaml`. `--yes` accepts the rest of the offer, `--no-ollama` skips it, and without a terminal (CI) nothing is installed unless you pass `--yes`.
+
+`ebbgate doctor` later checks that Ollama is reachable and that the model from `ebbgate.yaml` is pulled.
 
 ### 3. Paperclip and an API key — about 15–30 minutes (the biggest unknown)
 
@@ -145,9 +147,21 @@ git clone https://github.com/patilswapnilv/ebbgate.git ~/ebbgate
 (cd ~/ebbgate && pnpm install && pnpm build)
 ```
 
-Then, in an empty working folder (not necessarily the clone), run `pnpm ebbgate init` / `pnpm ebbgate doctor` from the checkout, or follow the README's "until the npm package is published" note. That writes `ebbgate.yaml` and `.env`, including `EG_PAPERCLIP_SECRET`.
+Ebbgate's commands work on the folder you run them in. To run the checkout's CLI from a separate working folder, point a shell alias at it:
 
-The Quickstart then has you start the dispatcher, install the presence agent on a Mac, and point Paperclip at Ebbgate. The next section is that last step in more detail.
+```bash
+alias ebbgate="node ~/ebbgate/packages/cli/dist/cli.js"
+mkdir -p ~/ebbgate-site && cd ~/ebbgate-site
+ebbgate init      # writes ebbgate.yaml (with a local: section) and .env, including EG_PAPERCLIP_SECRET
+ebbgate doctor
+ebbgate serve     # the dispatcher; leave it running in its own terminal
+```
+
+Once the package is on npm, the same commands are `npx ebbgate init`, `npx ebbgate doctor` and `npx ebbgate serve`, with no clone.
+
+`init` also offers the Ollama install and model pull from step 2 if you skipped it. `serve` loads `ebbgate.yaml` and the `.env` next to it, prints the URL it listens on and the `/run` URL for Paperclip, and stops cleanly on Ctrl-C.
+
+The Quickstart then has you install the presence agent on a Mac (`ebbgate agent install`, which by default reports to `server.publicUrl` from `ebbgate.yaml`) and point Paperclip at Ebbgate. The next section is that last step in more detail.
 
 ## Point Paperclip's `http` adapter at Ebbgate
 
@@ -259,14 +273,14 @@ Work through FAIL lines until they are gone. `doctor` checks Node, the config, `
 
 ## Time, at a glance
 
-| Step                                               | Rough time        | Notes                                                                           |
-| -------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| Node.js 24.11+ and pnpm                            | ~5 minutes        | Required by Paperclip; also covers Ebbgate                                      |
-| Ollama + a model                                   | ~10–30 minutes    | Almost all of this is the model download                                        |
-| Paperclip + API key                                | ~15–30 minutes    | Biggest unknown; not timed here                                                 |
-| Ebbgate (init, doctor, dispatcher, agent, adapter) | ~5–10 minutes     | Plus ~3–5 minutes to clone and build, until the package is on npm               |
-| **Total from a clean machine**                     | **about an hour** | The README "Quickstart (5 minutes)" starts after these prerequisites            |
-| Demo only (`ebbgate demo`)                         | ~1–10 minutes     | No Paperclip, Ollama, or keys; longer only if you still have to clone and build |
+| Step                                          | Rough time        | Notes                                                                           |
+| --------------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| Node.js 24.11+ and pnpm                       | ~5 minutes        | Required by Paperclip; also covers Ebbgate                                      |
+| Ollama + a model                              | ~10–30 minutes    | Almost all of this is the model download                                        |
+| Paperclip + API key                           | ~15–30 minutes    | Biggest unknown; not timed here                                                 |
+| Ebbgate (init, doctor, serve, agent, adapter) | ~5–10 minutes     | Plus ~3–5 minutes to clone and build, until the package is on npm               |
+| **Total from a clean machine**                | **about an hour** | The README "Quickstart (5 minutes)" starts after these prerequisites            |
+| Demo only (`ebbgate demo`)                    | ~1–10 minutes     | No Paperclip, Ollama, or keys; longer only if you still have to clone and build |
 
 ## Official sources
 

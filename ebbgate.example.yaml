@@ -27,6 +27,13 @@ paperclip:
   # an issue's whole label set on update, so a concurrent label change could be lost.
   labelDeferred: false
 
+# Optional. The local model `ebbgate init` set up. The dispatcher does not route on it;
+# `ebbgate doctor` checks that Ollama answers at ollamaUrl and has this model pulled.
+# EBBGATE_OLLAMA_URL in the environment overrides ollamaUrl.
+local:
+  ollamaUrl: http://127.0.0.1:11434
+  model: "llama3.2"
+
 # Tier is decided here, never by the caller. Unknown agents are treated as private.
 agents:
   agent_inbox: { tier: private }
