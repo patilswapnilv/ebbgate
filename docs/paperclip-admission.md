@@ -45,7 +45,10 @@ Consequences:
 - **Fast:** one HTTP call; ~150 ms end to end on a laptop.
 
 Exit codes: `0` admit, `1` refuse (policy), `2` refuse (error). Paperclip treats every
-non-zero code as a refusal; the split is for humans and logs. One line goes to stderr.
+non-zero code as a refusal; the split is for humans and logs. One line goes to stderr,
+with the reason code, e.g. `ebbgate admit: refuse node mini (tier=private; HELD_PRIVATE_MAC_OFFLINE: held because it's private and your Mac is offline (rule #1))`.
+`--json` adds `code` and `text`. Every answer is appended to the decision audit log
+(`ebbgate decisions --kind admission`); see [`explainability.md`](./explainability.md).
 
 ## Usage
 

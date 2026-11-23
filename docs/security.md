@@ -17,15 +17,23 @@ Private / deferred work is **not** forwarded. The cloud runner never receives th
 
 ## Auth surfaces
 
-| Endpoint                                   | Auth                                           |
-| ------------------------------------------ | ---------------------------------------------- |
-| `POST /run`                                | Bearer = `paperclip.sharedSecret`              |
-| `POST /presence`, `POST /nodes/:id/mode`   | Bearer = that node’s `token`                   |
-| `GET /status`                              | Bearer = `paperclip.sharedSecret` (v0.1 admin) |
-| `POST /admit` (read-only, `ebbgate admit`) | Bearer = `paperclip.sharedSecret` (v0.1 admin) |
-| `GET /healthz`                             | none                                           |
+| Endpoint                                 | Auth                                           |
+| ---------------------------------------- | ---------------------------------------------- |
+| `POST /run`                              | Bearer = `paperclip.sharedSecret`              |
+| `POST /presence`, `POST /nodes/:id/mode` | Bearer = that node’s `token`                   |
+| `GET /status`                            | Bearer = `paperclip.sharedSecret` (v0.1 admin) |
+| `GET /decisions` (audit log)             | Bearer = `paperclip.sharedSecret` (v0.1 admin) |
+| `POST /admit` (no run, `ebbgate admit`)  | Bearer = `paperclip.sharedSecret` (v0.1 admin) |
+| `GET /healthz`                           | none                                           |
 
 Paperclip outbound webhooks today use a shared-secret bearer (no HMAC body signature). See `TODO(verify-paperclip)` markers in the dispatcher.
+
+## Decision audit log
+
+Every routing and admission decision is appended to `decision_audit` with ids, the
+reason code, rule, tier and presence state only. Task payloads, prompts and secrets are
+never written to it, and `/status` no longer returns run payloads. Rows can't be
+updated (SQLite trigger); retention deletes old rows. See [`explainability.md`](./explainability.md).
 
 ## Logging
 

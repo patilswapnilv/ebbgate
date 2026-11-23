@@ -1,4 +1,5 @@
 import { type EbbgateConfig, isDefaultRule, type PolicyRule } from "./config.js";
+import { type DecisionReason, describeRule, reasonFor } from "./reasons.js";
 import type {
   Decision,
   NodeId,
@@ -85,10 +86,28 @@ function pickNode(
 }
 
 /** The single state the policy reacts to, across all configured nodes. */
-function overallState(nodes: readonly NodeStatus[]): PresenceState {
+export function overallState(nodes: readonly NodeStatus[]): PresenceState {
   if (nodes.some((n) => n.state === "available")) return "available";
   if (nodes.some((n) => n.state === "busy")) return "busy";
   return "offline";
+}
+
+/** Why a task is held, given its tier and the presence state the policy saw. */
+function heldReason(tier: Tier, state: PresenceState, rule: RuleRef): DecisionReason {
+  const ctx = { tier, presence: state, rule, detail: describeRule(rule) };
+  if (state === "offline")
+    return reasonFor(tier === "private" ? "HELD_PRIVATE_MAC_OFFLINE" : "HELD_MAC_OFFLINE", ctx);
+  if (state === "busy")
+    return reasonFor(tier === "private" ? "HELD_PRIVATE_MAC_BUSY" : "HELD_MAC_BUSY", ctx);
+  return reasonFor("HELD_POLICY", ctx);
+}
+
+/** Why a task went to the cloud, given the presence state the policy saw. */
+function cloudReason(tier: Tier, state: PresenceState, rule: RuleRef): DecisionReason {
+  const ctx = { tier, presence: state, rule, detail: describeRule(rule) };
+  if (state === "offline") return reasonFor("RUN_CLOUD_MAC_OFFLINE", ctx);
+  if (state === "busy") return reasonFor("RUN_CLOUD_MAC_BUSY", ctx);
+  return reasonFor("RUN_CLOUD_POLICY", ctx);
 }
 
 /**
@@ -96,6 +115,8 @@ function overallState(nodes: readonly NodeStatus[]): PresenceState {
  *
  * Invariant: a `private` task is never sent to the cloud. Config validation
  * already rejects such rules; this function enforces it again at runtime.
+ *
+ * Every decision carries `why`: a stable reason code and a short sentence.
  */
 export function decide(
   task: TaskContext,
@@ -105,20 +126,21 @@ export function decide(
   const known = nodes.filter((n) => Object.hasOwn(config.nodes, n.node));
   const index = config.policies.findIndex((r) => ruleMatches(r, task));
   const rule = config.policies[index];
+  const state = overallState(known);
 
   if (!rule) {
-    return guard(task, {
+    return guard(task, state, {
       action: "defer",
       notify: true,
       reason: "no policy rule matched; deferring as a safe fallback",
       rule: "default",
+      why: reasonFor("HELD_NO_RULE", { tier: task.tier, presence: state, rule: "default" }),
     });
   }
 
   const ref: RuleRef = isDefaultRule(rule) ? "default" : index;
   const actions = isDefaultRule(rule) ? rule.default : rule;
   const notify = isDefaultRule(rule) ? rule.default.notify : rule.notify;
-  const state = overallState(known);
   const action: PolicyAction = actions[state];
 
   const describe = `rule ${ref === "default" ? "default" : `#${ref}`}, tier=${task.tier}, nodes=${state}`;
@@ -130,47 +152,94 @@ export function decide(
         : known.filter((n) => n.state === "available" || n.state === "busy");
     const node = pickNode(acceptable, config.nodes);
     if (node) {
-      return guard(task, {
+      const priority = action === "local" ? "normal" : "low";
+      const nodeBusy = known.find((n) => n.node === node)?.state === "busy";
+      const ctx = { tier: task.tier, presence: state, rule: ref };
+      return guard(task, state, {
         action: "local",
         node,
-        priority: action === "local" ? "normal" : "low",
+        priority,
         reason: `${describe} -> ${action} on ${node}`,
         rule: ref,
+        why:
+          priority === "low" && nodeBusy
+            ? reasonFor("RUN_LOCAL_LOW_MAC_BUSY", { ...ctx, detail: node })
+            : reasonFor("RUN_LOCAL", {
+                ...ctx,
+                detail: priority === "low" ? `${node}, low priority` : node,
+              }),
       });
     }
     // No node can take it: fall through to the rule's offline action.
-    return toOffline(task, actions.offline, notify, ref, `${describe} -> ${action}, no node free`);
+    return toOffline(
+      task,
+      state,
+      actions.offline,
+      notify,
+      ref,
+      `${describe} -> ${action}, no node free`,
+    );
   }
 
   if (action === "cloud") {
-    return guard(task, { action: "cloud", reason: `${describe} -> cloud`, rule: ref });
+    return guard(task, state, {
+      action: "cloud",
+      reason: `${describe} -> cloud`,
+      rule: ref,
+      why: cloudReason(task.tier, state, ref),
+    });
   }
 
-  return guard(task, { action: "defer", notify, reason: `${describe} -> defer`, rule: ref });
+  return guard(task, state, {
+    action: "defer",
+    notify,
+    reason: `${describe} -> defer`,
+    rule: ref,
+    why: heldReason(task.tier, state, ref),
+  });
 }
 
 function toOffline(
   task: TaskContext,
+  state: PresenceState,
   action: "cloud" | "defer",
   notify: boolean,
   rule: RuleRef,
   why: string,
 ): Decision {
-  if (action === "cloud") return guard(task, { action: "cloud", reason: `${why} -> cloud`, rule });
-  return guard(task, { action: "defer", notify, reason: `${why} -> defer`, rule });
+  if (action === "cloud")
+    return guard(task, state, {
+      action: "cloud",
+      reason: `${why} -> cloud`,
+      rule,
+      why: cloudReason(task.tier, state, rule),
+    });
+  return guard(task, state, {
+    action: "defer",
+    notify,
+    reason: `${why} -> defer`,
+    rule,
+    why: heldReason(task.tier, state, rule),
+  });
 }
 
 /**
  * Defense in depth: never let a private task reach the cloud. Fails closed: a
  * task whose tier is not a recognised cloud-eligible tier is treated as private.
  */
-function guard(task: TaskContext, decision: Decision): Decision {
+function guard(task: TaskContext, state: PresenceState, decision: Decision): Decision {
   if (decision.action === "cloud" && !mayRunInCloud(task.tier)) {
     return {
       action: "defer",
       notify: true,
       reason: `${decision.reason}; blocked: private tasks never run in the cloud`,
       rule: decision.rule,
+      why: reasonFor("HELD_PRIVATE_CLOUD_BLOCKED", {
+        tier: task.tier,
+        presence: state,
+        rule: decision.rule,
+        detail: describeRule(decision.rule),
+      }),
     };
   }
   return decision;

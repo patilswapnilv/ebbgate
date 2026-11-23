@@ -4,7 +4,7 @@
  * back without sending private work to the cloud.
  */
 
-import { parseConfig } from "@ebbgate/core";
+import { parseConfig, reasonFor } from "@ebbgate/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertRunning, recordDecision } from "../../src/services/runs.js";
 import {
@@ -39,7 +39,14 @@ function crashAfterDecide(
     runId,
     agentId,
     tier: "private",
-    decision: { action: "local", node: "mini", priority: "normal", reason: "test", rule: 1 },
+    decision: {
+      action: "local",
+      node: "mini",
+      priority: "normal",
+      reason: "test",
+      rule: 1,
+      why: reasonFor("RUN_LOCAL", { tier: "private", presence: "available", rule: 1 }),
+    },
     decidedAt: at,
   });
   insertRunning(h.db, {

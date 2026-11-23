@@ -6,6 +6,7 @@ export {
   decideAdmission,
 } from "./admission.js";
 export {
+  AUDIT_DEFAULTS,
   ConfigError,
   type ConfigIssue,
   configSchema,
@@ -20,11 +21,20 @@ export {
   validatePrivacy,
   validateRunnerSeparation,
 } from "./config.js";
-export { decide, deriveState, mayRunInCloud, resolveTier } from "./policy.js";
+export { decide, deriveState, mayRunInCloud, overallState, resolveTier } from "./policy.js";
 export {
   PRESENCE_LIMITS,
   type PresenceReportResult,
   parsePresenceReport,
   presenceReportSchema,
 } from "./presence.js";
+export {
+  type DecisionReason,
+  describeRule,
+  isHeldCode,
+  isReasonCode,
+  REASON_CODES,
+  type ReasonCode,
+  reasonFor,
+} from "./reasons.js";
 export * from "./types.js";

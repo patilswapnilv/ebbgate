@@ -172,7 +172,7 @@ export async function runAdmit(argv: string[], deps: AdmitDeps = {}): Promise<nu
       log("ebbgate admit: refuse (dispatcher answer was not JSON)");
       return ADMIT_EXIT.error;
     }
-    const r = parsed as { admit?: unknown; tier?: unknown; reason?: unknown };
+    const r = parsed as { admit?: unknown; tier?: unknown; reason?: unknown; why?: unknown };
     if (typeof r.admit !== "boolean") {
       log("ebbgate admit: refuse (dispatcher answer had no admit field)");
       return ADMIT_EXIT.error;
@@ -190,12 +190,25 @@ export async function runAdmit(argv: string[], deps: AdmitDeps = {}): Promise<nu
       return ADMIT_EXIT.refuse;
     }
     const reason = typeof r.reason === "string" ? r.reason : "";
+    const why =
+      r.why !== null && typeof r.why === "object" ? (r.why as Record<string, unknown>) : {};
+    const code = typeof why.code === "string" ? why.code : undefined;
+    const whyText = typeof why.text === "string" ? why.text : undefined;
     const where = args.target.kind === "node" ? `node ${args.target.node}` : "remote";
     if (args.json) {
-      log(JSON.stringify({ admit: r.admit, tier: r.tier, target: where, reason }));
+      log(
+        JSON.stringify({
+          admit: r.admit,
+          tier: r.tier,
+          target: where,
+          reason,
+          ...(code ? { code } : {}),
+          ...(whyText ? { text: whyText } : {}),
+        }),
+      );
     } else {
       log(
-        `ebbgate admit: ${r.admit ? "admit" : "refuse"} ${where} (tier=${String(r.tier)}; ${reason})`,
+        `ebbgate admit: ${r.admit ? "admit" : "refuse"} ${where} (tier=${String(r.tier)}; ${code && whyText ? `${code}: ${whyText}` : reason})`,
       );
     }
     return r.admit === true ? ADMIT_EXIT.admit : ADMIT_EXIT.refuse;

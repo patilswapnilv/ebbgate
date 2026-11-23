@@ -133,6 +133,19 @@ export const configSchema = z
       .strict()
       .default({ offlineAfterSeconds: 90, drainConcurrency: 2, deferredMaxAgeHours: 72 }),
     /**
+     * Append-only audit log of routing and admission decisions (no payloads).
+     * Optional: defaults are applied by the dispatcher (see `AUDIT_DEFAULTS`).
+     */
+    audit: z
+      .object({
+        /** Delete audit rows older than this many days. */
+        retentionDays: z.number().int().min(1).max(3650).optional(),
+        /** Keep at most this many rows (newest kept). */
+        maxRows: z.number().int().min(1000).max(10_000_000).optional(),
+      })
+      .strict()
+      .optional(),
+    /**
      * Durability knobs for the deferred queue. Every wake is retried with
      * exponential backoff (`retryBaseSeconds * 2^(attempt-1)`, capped at
      * `retryMaxSeconds`) and dead-lettered after `maxAttempts`. A claim not
@@ -166,6 +179,9 @@ export const configSchema = z
   .strict();
 
 export type EbbgateConfig = z.infer<typeof configSchema>;
+
+/** Audit retention used when `audit` is not configured. */
+export const AUDIT_DEFAULTS = { retentionDays: 30, maxRows: 100_000 } as const;
 export type PolicyRule = EbbgateConfig["policies"][number];
 export type MatchRule = z.infer<typeof matchRuleSchema>;
 export type DefaultRule = z.infer<typeof defaultRuleSchema>;

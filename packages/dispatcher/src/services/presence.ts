@@ -8,6 +8,7 @@ import {
   type PresenceMode,
   type PresenceReport,
   type PresenceState,
+  reasonFor,
   resolveTier,
   type TaskContext,
   type Tier,
@@ -302,6 +303,11 @@ export function createPresenceService(deps: {
         notify: true,
         reason: `${decision.reason}; blocked: private tasks never run in the cloud`,
         rule: decision.rule,
+        why: reasonFor("HELD_PRIVATE_CLOUD_BLOCKED", {
+          tier: task.tier,
+          presence: decision.why.presence,
+          rule: decision.rule,
+        }),
       };
     }
     const decidedAt = now().toISOString();
