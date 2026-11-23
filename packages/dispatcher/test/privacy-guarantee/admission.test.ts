@@ -14,6 +14,9 @@ import {
   UNKNOWN_AGENTS,
 } from "./harness.js";
 
+// Hundreds of property runs, each opening a fresh SQLite harness: slow on shared CI runners.
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 interface AdmitAnswer {
   admit: boolean;
   tier: string;
@@ -101,50 +104,56 @@ describe("privacy guarantee: admission", () => {
     }
   });
 
-  it("property: no request body ever admits a non-cloud-eligible task remotely", async () => {
-    const agentArb = fc.oneof(
-      fc.constantFrom(
-        "agent_inbox",
-        "agent_finance",
-        "agent_ops",
-        "agent_research",
-        "constructor",
-        "__proto__",
-      ),
-      fc.stringMatching(/^[A-Za-z0-9._:-]{1,20}$/),
-    );
-    const bodyArb = fc.record(
-      {
-        agentId: agentArb,
-        issuePrivate: fc.boolean(),
-        labels: fc.array(fc.constantFrom("local-files", "urgent", "public", "x"), { maxLength: 4 }),
-        target: fc.constantFrom("remote", "node"),
-        node: fc.constantFrom("mini", "mbp", "constructor"),
-      },
-      { requiredKeys: ["target"] },
-    );
-    const onlineArb = fc.subarray(["mini", "mbp"] as const);
-    await fc.assert(
-      fc.asyncProperty(bodyArb, onlineArb, async (raw, online) => {
-        h.close();
-        h = harness();
-        for (const n of online) await postPresence(h, n);
-        const body: Record<string, unknown> = { ...raw };
-        if (body.target === "remote") delete body.node;
-        else if (body.node === undefined) body.node = "mini";
-        const res = await postAdmit(h, body);
-        if (res.status !== 200) return; // refused by validation: fails closed
-        const r = (await res.json()) as AdmitAnswer;
-        if (r.admit && body.target === "remote") {
-          expect(cloudEligible(body.agentId)).toBe(true);
-          expect(body.issuePrivate).not.toBe(true);
-          expect(r.tier === "internal" || r.tier === "public").toBe(true);
-        }
-        if (r.admit && body.target === "node") {
-          expect(online).toContain(body.node);
-        }
-      }),
-      { numRuns: 300 },
-    );
-  });
+  it(
+    "property: no request body ever admits a non-cloud-eligible task remotely",
+    async () => {
+      const agentArb = fc.oneof(
+        fc.constantFrom(
+          "agent_inbox",
+          "agent_finance",
+          "agent_ops",
+          "agent_research",
+          "constructor",
+          "__proto__",
+        ),
+        fc.stringMatching(/^[A-Za-z0-9._:-]{1,20}$/),
+      );
+      const bodyArb = fc.record(
+        {
+          agentId: agentArb,
+          issuePrivate: fc.boolean(),
+          labels: fc.array(fc.constantFrom("local-files", "urgent", "public", "x"), {
+            maxLength: 4,
+          }),
+          target: fc.constantFrom("remote", "node"),
+          node: fc.constantFrom("mini", "mbp", "constructor"),
+        },
+        { requiredKeys: ["target"] },
+      );
+      const onlineArb = fc.subarray(["mini", "mbp"] as const);
+      await fc.assert(
+        fc.asyncProperty(bodyArb, onlineArb, async (raw, online) => {
+          h.close();
+          h = harness();
+          for (const n of online) await postPresence(h, n);
+          const body: Record<string, unknown> = { ...raw };
+          if (body.target === "remote") delete body.node;
+          else if (body.node === undefined) body.node = "mini";
+          const res = await postAdmit(h, body);
+          if (res.status !== 200) return; // refused by validation: fails closed
+          const r = (await res.json()) as AdmitAnswer;
+          if (r.admit && body.target === "remote") {
+            expect(cloudEligible(body.agentId)).toBe(true);
+            expect(body.issuePrivate).not.toBe(true);
+            expect(r.tier === "internal" || r.tier === "public").toBe(true);
+          }
+          if (r.admit && body.target === "node") {
+            expect(online).toContain(body.node);
+          }
+        }),
+        { numRuns: 300 },
+      );
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });
