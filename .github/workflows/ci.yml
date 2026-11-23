@@ -18,6 +18,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Privacy guarantee suite (docs/privacy-guarantee.md)
+        run: pnpm test:privacy
+      - name: Privacy suite catches every broken defence (mutants)
+        run: pnpm test:privacy:mutants
       - run: pnpm build
       - run: pnpm smoke
       - run: node packages/cli/dist/cli.js demo --fast
@@ -35,6 +39,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Privacy guarantee suite (docs/privacy-guarantee.md)
+        run: pnpm test:privacy
       - run: pnpm build
       - run: pnpm smoke
       - run: node packages/cli/dist/cli.js demo --fast

@@ -1,5 +1,5 @@
 import { type EbbgateConfig, isDefaultRule } from "./config.js";
-import { decide, resolveTier } from "./policy.js";
+import { decide, mayRunInCloud, resolveTier } from "./policy.js";
 import type { Decision, NodeId, NodeStatus, TaskContext, Tier } from "./types.js";
 
 /**
@@ -80,7 +80,7 @@ export function decideAdmission(
 ): AdmissionResult {
   const tier = admissionTier(input, config);
 
-  if (input.target.kind === "node" && config.nodes[input.target.node] === undefined) {
+  if (input.target.kind === "node" && !Object.hasOwn(config.nodes, input.target.node)) {
     return { admit: false, tier, reason: `unknown node "${input.target.node}"` };
   }
 
@@ -105,7 +105,7 @@ export function decideAdmission(
   }
 
   // Defense in depth: the private-never-remote invariant, independent of decide().
-  if (tier === "private" && input.target.kind === "remote") {
+  if (input.target.kind === "remote" && !mayRunInCloud(tier)) {
     return { admit: false, tier, reason: "refused: private tasks never run remotely" };
   }
 

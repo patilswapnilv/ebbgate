@@ -7,6 +7,8 @@
 3. A deferred task is persisted to SQLite before Ebbgate responds to Paperclip.
 4. Secrets (tokens, API keys) never appear in logs or API responses.
 
+The precise guarantee, threat model and the test suite that verifies invariants 1 and 2: [privacy-guarantee.md](./privacy-guarantee.md).
+
 ## What the cloud sees
 
 When policy chooses `cloud`, the dispatcher forwards the **original Paperclip wake payload** to `cloud.runner`. That is whatever Paperclip put in the http-adapter body (run id, agent id, issue context, etc.).

@@ -282,6 +282,40 @@ export function validatePrivacy(policies: readonly PolicyRule[]): ConfigIssue[] 
   return issues;
 }
 
+/** Compare runner URLs the way fetch() would resolve them. */
+function sameEndpoint(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    return (
+      ua.origin === ub.origin && ua.pathname.replace(/\/+$/, "") === ub.pathname.replace(/\/+$/, "")
+    );
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * A node whose runner is the cloud runner would send "local" (including private)
+ * work to the cloud. Reject it: the local/cloud split must be real.
+ */
+export function validateRunnerSeparation(
+  config: Pick<EbbgateConfig, "nodes" | "cloud">,
+): ConfigIssue[] {
+  const issues: ConfigIssue[] = [];
+  for (const [id, n] of Object.entries(config.nodes)) {
+    if (sameEndpoint(n.runner, config.cloud.runner)) {
+      issues.push({
+        path: `nodes.${id}.runner`,
+        message:
+          "this node's runner is the cloud runner, so private work sent to it would run in the cloud. " +
+          "Point the node at its own runner on that machine.",
+      });
+    }
+  }
+  return issues;
+}
+
 function validateStructure(config: EbbgateConfig): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
   const defaults = config.policies.map((r, i) => ({ r, i })).filter(({ r }) => isDefaultRule(r));
@@ -322,7 +356,11 @@ export function parseConfig(
     );
   }
 
-  const issues = [...validateStructure(result.data), ...validatePrivacy(result.data.policies)];
+  const issues = [
+    ...validateStructure(result.data),
+    ...validatePrivacy(result.data.policies),
+    ...validateRunnerSeparation(result.data),
+  ];
   if (issues.length > 0) throw new ConfigError(issues);
 
   return result.data;

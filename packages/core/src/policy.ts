@@ -16,7 +16,24 @@ import type {
  * incoming payload. Unknown agents are treated as `private` (fail closed).
  */
 export function resolveTier(agentId: string, config: Pick<EbbgateConfig, "agents">): Tier {
-  return config.agents[agentId]?.tier ?? "private";
+  // Own keys only: an agent id such as "constructor" or "__proto__" must not pick up
+  // something from Object.prototype. Anything that is not a known tier fails closed.
+  if (typeof agentId !== "string" || !Object.hasOwn(config.agents, agentId)) return "private";
+  const tier = config.agents[agentId]?.tier;
+  return isTier(tier) ? tier : "private";
+}
+
+function isTier(value: unknown): value is Tier {
+  return value === "private" || value === "internal" || value === "public";
+}
+
+/**
+ * The one question every cloud hand-off must ask. Only `internal` and `public`
+ * may run in the cloud; `private`, and anything that is not a recognised tier
+ * (undefined, a typo, a value from an untyped caller), may not.
+ */
+export function mayRunInCloud(tier: unknown): boolean {
+  return tier === "internal" || tier === "public";
 }
 
 /**
@@ -31,7 +48,12 @@ export function deriveState(
 ): PresenceState {
   if (!report || !lastSeenAt) return "offline";
   const ageMs = now.getTime() - new Date(lastSeenAt).getTime();
-  if (Number.isNaN(ageMs) || ageMs > offlineAfterSeconds * 1000) return "offline";
+  const windowMs = offlineAfterSeconds * 1000;
+  if (Number.isNaN(ageMs) || ageMs > windowMs) return "offline";
+  // A heartbeat stamped further in the future than the freshness window means the
+  // dispatcher's clock jumped backwards (or the row was tampered with). Do not let
+  // it keep the node "fresh" for an unbounded time.
+  if (ageMs < -windowMs) return "offline";
   if (report.mode === "busy") return "busy";
   if (report.mode === "available") return "available";
   return report.onBattery ? "busy" : "available";
@@ -80,7 +102,7 @@ export function decide(
   nodes: readonly NodeStatus[],
   config: Pick<EbbgateConfig, "nodes" | "policies">,
 ): Decision {
-  const known = nodes.filter((n) => config.nodes[n.node] !== undefined);
+  const known = nodes.filter((n) => Object.hasOwn(config.nodes, n.node));
   const index = config.policies.findIndex((r) => ruleMatches(r, task));
   const rule = config.policies[index];
 
@@ -138,9 +160,12 @@ function toOffline(
   return guard(task, { action: "defer", notify, reason: `${why} -> defer`, rule });
 }
 
-/** Defense in depth: never let a private task reach the cloud. */
+/**
+ * Defense in depth: never let a private task reach the cloud. Fails closed: a
+ * task whose tier is not a recognised cloud-eligible tier is treated as private.
+ */
 function guard(task: TaskContext, decision: Decision): Decision {
-  if (task.tier === "private" && decision.action === "cloud") {
+  if (decision.action === "cloud" && !mayRunInCloud(task.tier)) {
     return {
       action: "defer",
       notify: true,

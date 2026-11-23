@@ -1,7 +1,9 @@
 import {
+  type Decision,
   decide,
   deriveState,
   type EbbgateConfig,
+  mayRunInCloud,
   type NodeStatus,
   type PresenceMode,
   type PresenceReport,
@@ -131,7 +133,7 @@ export function createPresenceService(deps: {
     const rows = db.prepare(`SELECT * FROM nodes`).all() as NodeRow[];
     const at = now();
     return rows
-      .filter((r) => config.nodes[r.id] !== undefined)
+      .filter((r) => Object.hasOwn(config.nodes, r.id))
       .map((r) => {
         const status = rowToStatus(r);
         return {
@@ -290,7 +292,18 @@ export function createPresenceService(deps: {
     const nodes = listNodeStatuses().map((n) =>
       nodeDropped && n.node === nodeId ? { ...n, state: "offline" as const } : n,
     );
-    const decision = decide(task, nodes, config);
+    let decision: Decision = decide(task, nodes, config);
+    if (decision.action === "cloud" && !mayRunInCloud(task.tier)) {
+      // Defense in depth, as on ingress: unreachable while decide() guards, but a
+      // replayed private run must never be the one path that skips the check.
+      logger.error({ runId: run.run_id }, "refusing cloud re-dispatch for private tier");
+      decision = {
+        action: "defer",
+        notify: true,
+        reason: `${decision.reason}; blocked: private tasks never run in the cloud`,
+        rule: decision.rule,
+      };
+    }
     const decidedAt = now().toISOString();
     logDemoDecision(demo, { task, tier: task.tier, nodes, decision });
 
@@ -339,7 +352,11 @@ export function createPresenceService(deps: {
 
     const replacementId = `${run.run_id}:${decision.action}`;
     const runnerUrl =
-      decision.action === "cloud" ? config.cloud.runner : config.nodes[decision.node]?.runner;
+      decision.action === "cloud"
+        ? config.cloud.runner
+        : Object.hasOwn(config.nodes, decision.node)
+          ? config.nodes[decision.node]?.runner
+          : undefined;
     if (!runnerUrl) {
       logger.error({ runId: run.run_id }, "no runner configured for re-decided target");
       return; // left unrecovered: retried on the next pass once config is fixed
@@ -383,6 +400,7 @@ export function createPresenceService(deps: {
       const result = await forwardToRunner(runnerUrl, payload, new Headers(), fetchFn, {
         timeoutMs: config.server.runnerTimeoutMs,
         idempotencyKey: idempotencyKeyFor(run.run_id),
+        forwardAuthorization: decision.action !== "cloud",
       });
       const ok = result.status >= 200 && result.status < 300;
       if (!ok) {
@@ -497,12 +515,13 @@ export function createPresenceService(deps: {
     },
 
     async applyReport(report: PresenceReport): Promise<void> {
-      if (!config.nodes[report.node]) throw new Error(`unknown node: ${report.node}`);
+      if (!Object.hasOwn(config.nodes, report.node))
+        throw new Error(`unknown node: ${report.node}`);
       await writeState(report.node, report.mode, now().toISOString(), report);
     },
 
     async setMode(nodeId: string, mode: PresenceMode): Promise<void> {
-      if (!config.nodes[nodeId]) throw new Error(`unknown node: ${nodeId}`);
+      if (!Object.hasOwn(config.nodes, nodeId)) throw new Error(`unknown node: ${nodeId}`);
       const row = readRow(nodeId);
       const report = row?.report_json
         ? ({ ...JSON.parse(row.report_json), mode } as PresenceReport)

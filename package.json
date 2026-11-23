@@ -11,6 +11,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest run",
+    "test:privacy": "vitest run privacy",
+    "test:privacy:mutants": "node scripts/privacy-mutants.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
@@ -24,6 +26,7 @@
     "@biomejs/biome": "^2.6.8",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
+    "fast-check": "^4.11.0",
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
