@@ -31,3 +31,15 @@ export {
   runInit,
 } from "./init.js";
 export { listPaperclipAgents } from "./paperclip-agents.js";
+export {
+  listenUrl,
+  parseServeArgs,
+  type ResolvedServe,
+  resolveServePaths,
+  runServeCommand,
+  SERVE_EXIT,
+  type ServeArgs,
+  type ServeHandle,
+  type ServeOptions,
+  startServe,
+} from "./serve.js";

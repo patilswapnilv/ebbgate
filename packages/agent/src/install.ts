@@ -73,6 +73,26 @@ export function inferNodeId(configPath: string): string {
   );
 }
 
+/**
+ * `server.publicUrl` from the config: the URL presence agents are meant to reach.
+ * Read as plain YAML (no env interpolation); values that need `${VAR}` expansion or
+ * are not http(s) URLs are ignored, so the caller falls back to its default.
+ */
+export function configDispatcherUrl(configPath: string): string | undefined {
+  try {
+    const raw = parseYaml(readFileSync(configPath, "utf8")) as {
+      server?: { publicUrl?: unknown };
+    };
+    const url = raw?.server?.publicUrl;
+    if (typeof url !== "string" || url.includes("${")) return undefined;
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
 function guiDomain(uid?: number): string {
   return `gui/${uid ?? process.getuid?.() ?? 501}`;
 }
@@ -97,6 +117,7 @@ export interface InstallSettings {
 /**
  * Resolve the settings to persist. Precedence for each value:
  * explicit option -> installing shell's environment -> existing local file -> default.
+ * The dispatcher URL's default is the config's `server.publicUrl` when it has one.
  * The config path is made absolute, so launchd never depends on the shell's cwd.
  */
 export function resolveInstallSettings(
@@ -131,6 +152,7 @@ export function resolveInstallSettings(
       opts.dispatcherUrl ??
       env.EBBGATE_DISPATCHER_URL ??
       local.dispatcherUrl ??
+      configDispatcherUrl(configPath) ??
       DEFAULT_DISPATCHER_URL
     ).replace(/\/$/, ""),
     gatewayUrl:

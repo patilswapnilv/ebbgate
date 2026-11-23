@@ -268,7 +268,7 @@ async function checkDispatcher(
           title,
           status: "fail",
           message: `${base} not reachable (${describe(err)})`,
-          fix: "start the dispatcher (README → Quickstart), or set EBBGATE_DISPATCHER_URL",
+          fix: "start it: `ebbgate serve` in the folder with ebbgate.yaml (or set EBBGATE_DISPATCHER_URL)",
         },
       ],
     };

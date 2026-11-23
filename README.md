@@ -77,13 +77,13 @@ PASS  Paperclip           http://127.0.0.1:3100 is reachable
 
 It also checks dispatcher auth and the Paperclip key. Add `--json` for scripts; it exits non-zero while anything fails. Work through it until it's green:
 
-1. **Start the dispatcher** (from a checkout for now), in the folder with `ebbgate.yaml`:
+1. **Start the dispatcher**, in the folder with `ebbgate.yaml` (leave it running in its own terminal):
 
    ```bash
-   git clone https://github.com/patilswapnilv/ebbgate.git ~/ebbgate
-   (cd ~/ebbgate && pnpm install && pnpm build)
-   node --env-file=.env ~/ebbgate/packages/dispatcher/dist/index.js
+   npx ebbgate serve       # loads ./ebbgate.yaml and ./.env; Ctrl-C stops it cleanly
    ```
+
+   It prints the URL it listens on and the `/run` URL for Paperclip. Use `--config PATH` / `--env PATH` for files elsewhere.
 
 2. **Install the presence agent on your Mac**, from the same folder. It's one command and runs under launchd:
 

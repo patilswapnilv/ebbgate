@@ -9,6 +9,7 @@ export { postPresence, runDaemon } from "./daemon.js";
 export { isEntrypoint } from "./entrypoint.js";
 export { loadEnvFile, parseEnvFile } from "./envfile.js";
 export {
+  configDispatcherUrl,
   inferNodeId,
   installAgent,
   type LaunchctlRunner,
