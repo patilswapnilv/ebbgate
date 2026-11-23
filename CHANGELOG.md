@@ -14,9 +14,12 @@ First usable release: M1–M5 from `BUILD_SPEC.md`.
 - **CLI + compose (M4)** — `@ebbgate/cli`: `ebbgate init` wizard (never overwrites without `--force`), `agent install`, `runner`; Docker Compose quickstart in `examples/compose` (dispatcher + LiteLLM, local-first model aliases).
 - **Docs + demo logging (M5)** — README, `docs/architecture.md`, `docs/policy.md`, `docs/security.md`, `docs/why-not-litellm-fallbacks.md`; `EG_DEMO=1` plain-text decision blocks.
 
+- **`ebbgate demo`** — 60-second, zero-setup simulation (real dispatcher in-process, fake Paperclip and runners): local routing, cloud for non-private work, a private task deferred while offline and drained on return.
+- **npm package `ebbgate`** — publishable CLI bundling the workspace packages; changesets; tag/manual Release workflow (uses the `NPM_TOKEN` secret); macOS CI job.
+
 ### Known gaps
 
-- Not yet published to npm; run from a source checkout.
+- npm publish has not happened yet.
 - Paperclip handshake details marked `TODO(verify-paperclip)` are untested against a live Paperclip.
 
 [0.1.0]: https://github.com/patilswapnilv/ebbgate/compare/8959091...v0.1.0

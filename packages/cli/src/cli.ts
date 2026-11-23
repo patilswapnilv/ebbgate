@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { isEntrypoint, runAgentCli } from "@ebbgate/agent";
+import { runDemoCommand } from "./demo.js";
 import { runInit } from "./init.js";
 
 async function main(argv: string[]): Promise<void> {
@@ -28,10 +29,16 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "demo") {
+    await runDemoCommand(argv.slice(1));
+    return;
+  }
+
   if (cmd === "help" || cmd === "--help" || cmd === "-h" || !cmd) {
     console.log(`ebbgate — presence-aware task dispatcher for Paperclip agents
 
 Usage:
+  ebbgate demo [--fast]          60-second simulation, no setup needed
   ebbgate init [--yes] [--force]
   ebbgate agent install|uninstall|run
   ebbgate busy on|off|auto

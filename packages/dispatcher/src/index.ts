@@ -11,6 +11,7 @@ import { listen } from "./serve.js";
 
 export { createApp } from "./app.js";
 export { openDb } from "./db/index.js";
+export { type DemoOptions, type DemoResult, demoConfig, runDemo } from "./demo-scenario.js";
 export { isEntrypoint } from "./main.js";
 export { createHttpPaperclipClient } from "./paperclip/client.js";
 export { ParseError, parseRun } from "./paperclip/parse.js";

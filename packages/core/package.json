@@ -1,6 +1,7 @@
 {
   "name": "@ebbgate/core",
   "version": "0.0.0",
+  "private": true,
   "description": "Ebbgate core: config schema and the pure policy engine.",
   "type": "module",
   "license": "MIT",
