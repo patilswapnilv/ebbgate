@@ -2,6 +2,7 @@ import { type AdmissionInput, decideAdmission } from "@ebbgate/core";
 import { Hono } from "hono";
 import type { AppEnv } from "../app-types.js";
 import { bearerMatches } from "../auth.js";
+import { auditAdmission } from "../services/audit.js";
 
 const ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const MAX_LABELS = 32;
@@ -47,8 +48,9 @@ export function parseAdmitBody(body: unknown): AdmissionInput | string {
 }
 
 /**
- * POST /admit: read-only admission check for orchestrators (Paperclip
- * `admissionCommand` via `ebbgate admit`). Records nothing, forwards nothing.
+ * POST /admit: admission check for orchestrators (Paperclip `admissionCommand`
+ * via `ebbgate admit`). Creates no run and forwards nothing; the answer is
+ * appended to the audit log (ids and reason codes only).
  */
 export function admitRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -68,16 +70,31 @@ export function admitRoutes(): Hono<AppEnv> {
     if (typeof input === "string") return c.json({ error: input }, 400);
 
     const result = decideAdmission(input, c.get("presence").listNodeStatuses(), c.get("config"));
+    const target = input.target.kind === "node" ? input.target.node : "remote";
+    const environmentId =
+      typeof (body as { environmentId?: unknown }).environmentId === "string"
+        ? (body as { environmentId: string }).environmentId
+        : undefined;
+    try {
+      auditAdmission(c.get("db"), {
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(environmentId ? { environmentId } : {}),
+        target,
+        result,
+        decidedAt: c.get("now")().toISOString(),
+      });
+    } catch (err) {
+      // Auditing must never change the admission answer.
+      c.get("logger").warn({ err: String(err) }, "admission audit write failed");
+    }
     c.get("logger").info(
       {
         admit: result.admit,
         tier: result.tier,
-        target: input.target.kind === "node" ? input.target.node : "remote",
+        code: result.why.code,
+        target,
         agentId: input.agentId ?? null,
-        environmentId:
-          typeof (body as { environmentId?: unknown }).environmentId === "string"
-            ? (body as { environmentId: string }).environmentId
-            : null,
+        environmentId: environmentId ?? null,
       },
       "admission check",
     );

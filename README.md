@@ -99,6 +99,21 @@ EG_DEMO=1 node packages/dispatcher/dist/index.js
 
 Prints plain-text decision blocks (no secrets) — handy for screen recordings.
 
+### Why is my task waiting?
+
+```bash
+ebbgate status              # presence, queue counts, and why each held task waits
+ebbgate why <taskId>        # every decision for one task (add --json for scripts)
+ebbgate decisions --limit 20
+```
+
+```
+waiting:
+  run-42  agent_inbox  private  12m  HELD_PRIVATE_MAC_OFFLINE: held because it's private and your Mac is offline (rule #1)
+```
+
+Every decision is recorded in an append-only audit log (reason codes only, never payloads). The SwiftBar plugin shows the held count and top reason. See [`docs/explainability.md`](./docs/explainability.md).
+
 ## Policy file
 
 Annotated example: [`ebbgate.example.yaml`](./ebbgate.example.yaml). Rules are first-match; private→cloud is rejected at load time and again at runtime. See [`docs/policy.md`](./docs/policy.md).

@@ -39,7 +39,11 @@ Transitions:
 
 ## Storage
 
-SQLite file (default `./data/ebbgate.db`): `nodes`, `runs`, `deferred`, `decisions`. Plain SQL migrations at startup.
+SQLite file (default `./data/ebbgate.db`): `nodes`, `runs`, `deferred`, `decisions`, and the append-only `decision_audit` log (reason codes, no payloads; retention by age and row cap). Plain SQL migrations at startup.
+
+## Explainability
+
+`decide()` and `decideAdmission()` return a structured reason (`why`: stable code + short sentence, tier, presence, rule). The dispatcher audits every decision and serves `GET /status` (why each waiting task waits) and `GET /decisions`. See [`explainability.md`](./explainability.md).
 
 ## Demo mode
 

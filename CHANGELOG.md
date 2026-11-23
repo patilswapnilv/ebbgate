@@ -17,6 +17,7 @@ First usable release: M1–M5 from `BUILD_SPEC.md`.
 - **`ebbgate demo`** — 60-second, zero-setup simulation (real dispatcher in-process, fake Paperclip and runners): local routing, cloud for non-private work, a private task deferred while offline and drained on return.
 - **npm package `ebbgate`** — publishable CLI bundling the workspace packages; changesets; tag/manual Release workflow (uses the `NPM_TOKEN` secret); macOS CI job.
 - **`ebbgate admit`** — admission probe for Paperclip's proposed per-environment `admissionCommand` (paperclip#17402): exit 0 admits, non-zero refuses; private + node offline refuses everywhere so Paperclip holds the run; fails closed on any error or timeout. Backed by a read-only dispatcher `POST /admit` and `decideAdmission()` in `@ebbgate/core`. Docs: `docs/paperclip-admission.md`.
+- **Explainable decisions** — every `decide()` / `decideAdmission()` result carries `why`: a stable reason code plus a short sentence (e.g. `HELD_PRIVATE_MAC_OFFLINE`: "held because it's private and your Mac is offline"), with tier, presence and matched rule. Append-only `decision_audit` table (no payloads; retention via optional `audit.retentionDays` / `audit.maxRows`); `GET /status` lists why each waiting task waits; new `GET /decisions`; `ebbgate status [--json]`, `ebbgate why <taskId>`, `ebbgate decisions`; SwiftBar shows held count and top reason. Docs: `docs/explainability.md`.
 
 ### Known gaps
 

@@ -1,5 +1,6 @@
 import type { Decision, Tier } from "@ebbgate/core";
 import type { Db } from "../db/index.js";
+import { auditRoute } from "./audit.js";
 
 export type RunStatus = "running" | "interrupted" | "completed" | "failed";
 export type RunTarget = "local" | "cloud";
@@ -51,6 +52,14 @@ export function recordDecision(
     String(args.decision.rule),
     args.decidedAt,
   );
+  // Same call, same transaction as the caller: every recorded decision is audited.
+  auditRoute(db, {
+    runId: args.runId,
+    agentId: args.agentId,
+    ...(args.issueId ? { issueId: args.issueId } : {}),
+    decision: args.decision,
+    decidedAt: args.decidedAt,
+  });
 }
 
 export function insertRunning(

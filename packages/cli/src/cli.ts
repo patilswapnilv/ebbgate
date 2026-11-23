@@ -2,6 +2,7 @@
 import { isEntrypoint, runAgentCli } from "@ebbgate/agent";
 import { runAdmit } from "./admit.js";
 import { runDemoCommand } from "./demo.js";
+import { runDecisions, runStatusCommand, runWhy } from "./explain.js";
 import { runInit } from "./init.js";
 
 async function main(argv: string[]): Promise<void> {
@@ -35,6 +36,21 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "status") {
+    process.exitCode = await runStatusCommand(argv.slice(1));
+    return;
+  }
+
+  if (cmd === "why") {
+    process.exitCode = await runWhy(argv.slice(1));
+    return;
+  }
+
+  if (cmd === "decisions") {
+    process.exitCode = await runDecisions(argv.slice(1));
+    return;
+  }
+
   if (cmd === "demo") {
     await runDemoCommand(argv.slice(1));
     return;
@@ -50,7 +66,10 @@ Usage:
                                  admission probe (exit 0 admit, non-zero refuse)
   ebbgate agent install|uninstall|run
   ebbgate busy on|off|auto
-  ebbgate status
+  ebbgate status [--json]        presence, queue, and why each waiting task waits
+  ebbgate why <taskId> [--json]  every routing decision for a task, and why
+  ebbgate decisions [--task ID] [--agent ID] [--kind route|admission] [--limit N] [--json]
+                                 the decision audit log, newest first
   ebbgate runner
 `);
     return;

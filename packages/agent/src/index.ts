@@ -18,3 +18,12 @@ export { readNodeCredentials } from "./node-credentials.js";
 export { AGENT_VERSION, DEFAULT_GATEWAY_URL, LAUNCH_AGENT_LABEL } from "./paths.js";
 export { buildPresenceReport } from "./report.js";
 export { startRunnerShim } from "./runner.js";
+export { printStatus } from "./status.js";
+export {
+  formatAge,
+  formatDecisionLine,
+  formatDispatcherStatus,
+  formatWhy,
+  type StatusDecision,
+  type StatusWaiting,
+} from "./status-format.js";

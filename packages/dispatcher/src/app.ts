@@ -11,8 +11,12 @@ import { nodesRoutes } from "./routes/nodes.js";
 import { presenceRoutes } from "./routes/presence.js";
 import { runRoutes } from "./routes/run.js";
 import { statusRoutes } from "./routes/status.js";
+import { auditRetention, pruneAudit } from "./services/audit.js";
 import { createNotifier, type Notifier } from "./services/notifier.js";
 import { createPresenceService, type PresenceService } from "./services/presence.js";
+
+/** How often the audit log's retention is applied. */
+export const AUDIT_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 
 export interface CreateAppOptions {
   config: EbbgateConfig;
@@ -75,10 +79,27 @@ export function createApp(opts: CreateAppOptions): AppHandle {
   app.route("/", runRoutes());
   app.route("/", admitRoutes());
 
+  // Audit retention runs on the presence tick, at most once per interval.
+  let lastPrune = Number.NEGATIVE_INFINITY;
+  const pruneIfDue = (): void => {
+    const at = now();
+    if (at.getTime() - lastPrune < AUDIT_PRUNE_INTERVAL_MS) return;
+    lastPrune = at.getTime();
+    try {
+      const pruned = pruneAudit(opts.db, at, auditRetention(opts.config));
+      if (pruned.byAge + pruned.byCount > 0) logger.info(pruned, "audit log pruned");
+    } catch (err) {
+      logger.warn({ err: String(err) }, "audit prune failed");
+    }
+  };
+
   return {
     app,
     presence,
     notifier,
-    tick: () => presence.tick(),
+    tick: async () => {
+      pruneIfDue();
+      await presence.tick();
+    },
   };
 }

@@ -5,6 +5,8 @@
  * on a cloud runtime, or waits ("defer") until a local machine returns.
  */
 
+import type { DecisionReason } from "./reasons.js";
+
 export type NodeId = string;
 
 /** Derived state of a local node, as seen by the dispatcher. */
@@ -72,6 +74,10 @@ export type PolicyAction = "local" | "local-low" | "cloud" | "defer";
 /** Actions allowed when no local node can take the work. */
 export type OfflineAction = Extract<PolicyAction, "cloud" | "defer">;
 
+/**
+ * A routing decision. `reason` is a detailed trace for logs; `why` is the
+ * structured, user-facing explanation (stable code + short sentence).
+ */
 export type Decision =
   | {
       action: "local";
@@ -79,9 +85,10 @@ export type Decision =
       priority: "normal" | "low";
       reason: string;
       rule: RuleRef;
+      why: DecisionReason;
     }
-  | { action: "cloud"; reason: string; rule: RuleRef }
-  | { action: "defer"; reason: string; notify: boolean; rule: RuleRef };
+  | { action: "cloud"; reason: string; rule: RuleRef; why: DecisionReason }
+  | { action: "defer"; reason: string; notify: boolean; rule: RuleRef; why: DecisionReason };
 
 /** Which policy rule produced a decision: its index, or "default". */
 export type RuleRef = number | "default";
