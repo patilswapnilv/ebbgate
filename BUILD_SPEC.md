@@ -265,6 +265,10 @@ interface PaperclipClient {
 
 ---
 
+### Node secrets
+
+A node holds only its own token (`EG_NODE_<ID>_TOKEN`). The agent reads just `nodes.<id>.token` from `ebbgate.yaml`, so dispatcher secrets (Paperclip key, notifier tokens, other nodes' tokens) never need to exist on a Mac. Secrets come from the process environment or an env file. The file is resolved from `--env-file` / `EBBGATE_ENV_FILE`, then the saved path, then `.env` next to the config, then `~/.ebbgate/.env`; process env wins. Keep the file at mode 600 (the agent warns otherwise). `agent install` records only the env-file _path_ in the plist (never values) and refuses to install if launchd would not find the token. `ebbgate status` queries the dispatcher only if its admin secret happens to be available.
+
 ## 9. CLI wizard (packages/cli): `npx ebbgate init`
 
 1. Detect: Ollama (`:11434`), LiteLLM (`:4000`), Paperclip (`:3100`); ask for URLs if not found.

@@ -1,17 +1,29 @@
 import { z } from "zod";
 import type { PresenceReport } from "./types.js";
 
+/** Limits a presence report must respect. Agents normalize to these before sending. */
+export const PRESENCE_LIMITS = {
+  maxModels: 512,
+  maxModelNameLength: 256,
+  maxNodeIdLength: 64,
+  maxAgentVersionLength: 64,
+} as const;
+
 /** Runtime schema for a presence heartbeat (see `PresenceReport`). */
 export const presenceReportSchema = z
   .object({
-    node: z.string().min(1).max(64),
+    node: z.string().min(1).max(PRESENCE_LIMITS.maxNodeIdLength),
     mode: z.enum(["auto", "busy", "available"]),
     freeRamGb: z.number().finite().min(0),
     onBattery: z.boolean(),
     userIdleSeconds: z.number().finite().min(0),
-    modelsLoaded: z.array(z.string().max(256)).max(512),
-    modelsInstalled: z.array(z.string().max(256)).max(512),
-    agentVersion: z.string().min(1).max(64),
+    modelsLoaded: z
+      .array(z.string().max(PRESENCE_LIMITS.maxModelNameLength))
+      .max(PRESENCE_LIMITS.maxModels),
+    modelsInstalled: z
+      .array(z.string().max(PRESENCE_LIMITS.maxModelNameLength))
+      .max(PRESENCE_LIMITS.maxModels),
+    agentVersion: z.string().min(1).max(PRESENCE_LIMITS.maxAgentVersionLength),
     sentAt: z.iso.datetime({ offset: true }),
   })
   .strict();
