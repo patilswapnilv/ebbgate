@@ -14,6 +14,13 @@ describe("top-level README", () => {
     expect(readme).toContain("pnpm ebbgate init");
   });
 
+  it("builds the quickstart around init and doctor", () => {
+    expect(readme).toContain("npx ebbgate init && npx ebbgate doctor");
+    expect(readme).toContain("ebbgate agent install");
+    expect(readme).toContain("ebbgate agent uninstall");
+    expect(readme).toMatch(/mode 600/);
+  });
+
   it("gives nodes only their own token through an env file", () => {
     expect(readme).toContain("--env-file ~/.ebbgate/.env");
     expect(readme).toContain("chmod 600 ~/.ebbgate/.env");

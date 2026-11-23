@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { parse as parseYaml } from "yaml";
 import {
   type AgentLocalFile,
   readAgentLocalFile,
@@ -26,6 +27,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+/** Runs `launchctl` (or a stub in tests). Rejects when the command fails. */
+export type LaunchctlRunner = (cmd: string, args: string[]) => Promise<unknown>;
+
 export interface InstallOptions {
   node: string;
   dispatcherUrl?: string;
@@ -39,8 +43,38 @@ export interface InstallOptions {
   /** Absolute path to packages/agent/dist/cli.js */
   cliPath?: string;
   plistPath?: string;
-  exec?: typeof execFileAsync;
+  exec?: LaunchctlRunner;
   env?: NodeJS.ProcessEnv;
+  /** Where node id and agent.json go (default ~/.ebbgate). Injectable for tests. */
+  ebbgateDir?: string;
+  /** User id for the launchd gui domain (default: the current user). */
+  uid?: number;
+  /** Defaults to process.platform; install refuses anything but darwin. */
+  platform?: NodeJS.Platform;
+}
+
+/**
+ * The node id to install when --node is not given: the only node in the config.
+ * Reads node ids only, no secrets and no env interpolation.
+ */
+export function inferNodeId(configPath: string): string {
+  let ids: string[] = [];
+  try {
+    const raw = parseYaml(readFileSync(configPath, "utf8")) as { nodes?: Record<string, unknown> };
+    ids = raw?.nodes && typeof raw.nodes === "object" ? Object.keys(raw.nodes) : [];
+  } catch {
+    // reported below
+  }
+  if (ids.length === 1 && ids[0]) return ids[0];
+  throw new Error(
+    ids.length === 0
+      ? `no nodes in ${configPath}; run \`ebbgate init\` or pass --node <id>`
+      : `${configPath} has several nodes (${ids.join(", ")}); pass --node <id>`,
+  );
+}
+
+function guiDomain(uid?: number): string {
+  return `gui/${uid ?? process.getuid?.() ?? 501}`;
 }
 
 export function defaultCliPath(): string {
@@ -137,13 +171,15 @@ export function buildLaunchAgentPlist(args: {
   env: NodeJS.ProcessEnv;
   nodeBin: string;
   cliPath: string;
+  /** Defaults to ~/.ebbgate. */
+  workingDirectory?: string;
 }): string {
   return renderLaunchAgentPlist({
     label: LAUNCH_AGENT_LABEL,
     nodeBin: args.nodeBin,
     cliPath: args.cliPath,
     env: launchAgentEnv(args.node, args.settings, args.env),
-    workingDirectory: EBBGATE_DIR,
+    workingDirectory: args.workingDirectory ?? EBBGATE_DIR,
   });
 }
 
@@ -218,30 +254,47 @@ export function preflightCredentials(
   });
 }
 
-export async function installAgent(opts: InstallOptions): Promise<{ plistPath: string }> {
+export async function installAgent(
+  opts: InstallOptions,
+): Promise<{ plistPath: string; settings: InstallSettings }> {
   const exec = opts.exec ?? execFileAsync;
   const plistPath = opts.plistPath ?? LAUNCH_AGENT_PLIST;
   const nodeBin = opts.nodeBin ?? process.execPath;
   const cliPath = opts.cliPath ?? defaultCliPath();
   const env = opts.env ?? process.env;
+  const dir = opts.ebbgateDir ?? EBBGATE_DIR;
+  const localPath = join(dir, "agent.json");
 
-  const local = readAgentLocalFile();
+  const local = readAgentLocalFile(localPath);
   // Resolve and check before writing anything: no half-install.
   const settings = resolveInstallSettings(opts, env, local);
   preflightCredentials(opts.node, settings, env);
+  if ((opts.platform ?? process.platform) !== "darwin") {
+    throw new Error(
+      "ebbgate agent install sets up a macOS launchd agent; on other systems run `ebbgate agent run` under your service manager",
+    );
+  }
 
-  writeNodeId(opts.node);
-  writeAgentLocalFile({ ...local, node: opts.node, ...settings });
+  writeNodeId(opts.node, join(dir, "node"));
+  writeAgentLocalFile({ ...local, node: opts.node, ...settings }, localPath);
 
-  const xml = buildLaunchAgentPlist({ node: opts.node, settings, env, nodeBin, cliPath });
+  const xml = buildLaunchAgentPlist({
+    node: opts.node,
+    settings,
+    env,
+    nodeBin,
+    cliPath,
+    workingDirectory: dir,
+  });
 
-  mkdirSync(EBBGATE_DIR, { recursive: true });
+  mkdirSync(dir, { recursive: true });
   mkdirSync(dirname(plistPath), { recursive: true });
   writeFileSync(plistPath, xml, { mode: 0o644 });
 
+  const domain = guiDomain(opts.uid);
   // Unload first if present, then load.
   try {
-    await exec("launchctl", ["bootout", `gui/${process.getuid?.() ?? 501}/${LAUNCH_AGENT_LABEL}`]);
+    await exec("launchctl", ["bootout", `${domain}/${LAUNCH_AGENT_LABEL}`]);
   } catch {
     try {
       await exec("launchctl", ["unload", plistPath]);
@@ -250,22 +303,23 @@ export async function installAgent(opts: InstallOptions): Promise<{ plistPath: s
     }
   }
   try {
-    await exec("launchctl", ["bootstrap", `gui/${process.getuid?.() ?? 501}`, plistPath]);
+    await exec("launchctl", ["bootstrap", domain, plistPath]);
   } catch {
     await exec("launchctl", ["load", plistPath]);
   }
 
-  return { plistPath };
+  return { plistPath, settings };
 }
 
 export async function uninstallAgent(opts: {
   plistPath?: string;
-  exec?: typeof execFileAsync;
-}): Promise<void> {
+  exec?: LaunchctlRunner;
+  uid?: number;
+}): Promise<{ plistPath: string; removed: boolean }> {
   const exec = opts.exec ?? execFileAsync;
   const plistPath = opts.plistPath ?? LAUNCH_AGENT_PLIST;
   try {
-    await exec("launchctl", ["bootout", `gui/${process.getuid?.() ?? 501}/${LAUNCH_AGENT_LABEL}`]);
+    await exec("launchctl", ["bootout", `${guiDomain(opts.uid)}/${LAUNCH_AGENT_LABEL}`]);
   } catch {
     try {
       await exec("launchctl", ["unload", plistPath]);
@@ -273,9 +327,11 @@ export async function uninstallAgent(opts: {
       // ignore
     }
   }
+  const removed = existsSync(plistPath);
   try {
     unlinkSync(plistPath);
   } catch {
     // already gone
   }
+  return { plistPath, removed };
 }

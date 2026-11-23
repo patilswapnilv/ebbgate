@@ -66,7 +66,7 @@ describe("runInit --yes", () => {
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
   });
 
-  it("writes the three files", async () => {
+  it("writes the config, secrets and example files", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ebbgate-init-"));
     dirs.push(dir);
     const result = await runInit({
@@ -76,7 +76,7 @@ describe("runInit --yes", () => {
         throw new Error("offline");
       },
     });
-    expect(result.files).toHaveLength(3);
+    expect(result.files).toHaveLength(4);
     expect(readFileSync(join(dir, "ebbgate.yaml"), "utf8")).toContain("publicUrl:");
     expect(readFileSync(join(dir, ".env.example"), "utf8")).toContain("EG_PAPERCLIP_SECRET=");
     expect(readFileSync(join(dir, "litellm.config.yaml"), "utf8")).toContain("private-fast");

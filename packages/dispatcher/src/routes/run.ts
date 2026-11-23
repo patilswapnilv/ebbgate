@@ -120,6 +120,12 @@ export function runRoutes(): Hono<AppEnv> {
         logger.error({ runId: task.runId }, "refusing cloud dispatch for private tier");
         return c.json({ error: "private tasks never run in the cloud" }, 500);
       }
+      const cloudRunner = config.cloud?.runner;
+      if (!cloudRunner) {
+        // Unreachable: config load rejects `cloud` actions without a cloud runner.
+        logger.error({ runId: task.runId }, "cloud action without a configured cloud runner");
+        return c.json({ error: "no cloud runner configured" }, 500);
+      }
       insertRunning(db, {
         runId: task.runId,
         ...(task.issueId ? { issueId: task.issueId } : {}),
@@ -131,16 +137,10 @@ export function runRoutes(): Hono<AppEnv> {
       });
       try {
         markDispatched(db, task.runId, now().toISOString());
-        const result = await forwardToRunner(
-          config.cloud.runner,
-          body,
-          c.req.raw.headers,
-          fetchFn,
-          {
-            timeoutMs: config.server.runnerTimeoutMs,
-            idempotencyKey: idempotencyKeyFor(task.runId),
-          },
-        );
+        const result = await forwardToRunner(cloudRunner, body, c.req.raw.headers, fetchFn, {
+          timeoutMs: config.server.runnerTimeoutMs,
+          idempotencyKey: idempotencyKeyFor(task.runId),
+        });
         settle(task.runId, result.status);
         return relayResponse(result);
       } catch (err) {

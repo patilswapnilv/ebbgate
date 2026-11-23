@@ -79,6 +79,6 @@ pnpm ebbgate init
 pnpm ebbgate init --yes
 ```
 
-`pnpm ebbgate` runs the built CLI (`packages/cli/dist/cli.js`) in the directory you call it from, so relative paths such as `--config ./ebbgate.yaml` resolve where you expect. It writes `ebbgate.yaml`, `.env.example` and `litellm.config.yaml` there, and refuses to replace existing files unless you pass `--force`.
+`pnpm ebbgate` runs the built CLI (`packages/cli/dist/cli.js`) in the directory you call it from, so relative paths such as `--config ./ebbgate.yaml` resolve where you expect. It writes `ebbgate.yaml`, `.env` (generated secrets, mode 600), `.env.example` and `litellm.config.yaml` there, and refuses to replace existing files unless you pass `--force` (secrets already in `.env` are kept). Then run `pnpm ebbgate doctor` to check the setup.
 
 `--config` is stored as an absolute path, so the installed agent finds it no matter where launchd starts it. `--runner-host 0.0.0.0` lets the dispatcher container reach the runner; on a shared network, prefer a VPN/Tailscale IP.

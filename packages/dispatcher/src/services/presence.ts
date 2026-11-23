@@ -303,7 +303,7 @@ export function createPresenceService(deps: {
 
     const replacementId = `${run.run_id}:${decision.action}`;
     const runnerUrl =
-      decision.action === "cloud" ? config.cloud.runner : config.nodes[decision.node]?.runner;
+      decision.action === "cloud" ? config.cloud?.runner : config.nodes[decision.node]?.runner;
     if (!runnerUrl) {
       logger.error({ runId: run.run_id }, "no runner configured for re-decided target");
       return; // left unrecovered: retried on the next pass once config is fixed

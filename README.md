@@ -46,9 +46,64 @@ Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./
 
 ## Quickstart (5 minutes)
 
-Try it first with `npx ebbgate demo` (above). For a real setup:
+Try it first with `npx ebbgate demo` (above). For a real setup, in an empty folder:
 
-### Option A — Docker Compose
+```bash
+npx ebbgate init && npx ebbgate doctor
+```
+
+`init` asks a few questions (or takes secure defaults with `--yes`) and writes:
+
+| File                                  | What                                                                                                                                                                    |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ebbgate.yaml`                        | A minimal policy. No cloud runner, so nothing leaves your machines; agents you don't list are private; private work waits for your Mac.                                 |
+| `.env`                                | Generated `EG_PAPERCLIP_SECRET` and node token, **mode 600**, never printed in full. Add `PAPERCLIP_API_KEY` here (or have it in your environment when you run `init`). |
+| `.env.example`, `litellm.config.yaml` | Templates for Docker Compose and LiteLLM.                                                                                                                               |
+
+You don't edit any YAML to get started. `doctor` then checks everything and prints one line per check with the fix:
+
+```text
+PASS  Node.js             v22.12.0
+PASS  Config              ./ebbgate.yaml is valid
+PASS  Secrets file        ./.env (mode 600)
+FAIL  Dispatcher          http://127.0.0.1:8790 not reachable (ECONNREFUSED)
+                          fix: start the dispatcher (README → Quickstart), or set EBBGATE_DISPATCHER_URL
+WARN  Presence heartbeat  skipped: dispatcher status unavailable
+PASS  Ollama              http://127.0.0.1:11434 (3 model(s))
+PASS  Cloud runner        none configured: nothing leaves your machines (work waits for a local node)
+PASS  SQLite queue        ./data/ebbgate.db is writable
+PASS  Paperclip           http://127.0.0.1:3100 is reachable
+```
+
+It also checks dispatcher auth and the Paperclip key. Add `--json` for scripts; it exits non-zero while anything fails. Work through it until it's green:
+
+1. **Start the dispatcher** (from a checkout for now), in the folder with `ebbgate.yaml`:
+
+   ```bash
+   git clone https://github.com/patilswapnilv/ebbgate.git ~/ebbgate
+   (cd ~/ebbgate && pnpm install && pnpm build)
+   node --env-file=.env ~/ebbgate/packages/dispatcher/dist/index.js
+   ```
+
+2. **Install the presence agent on your Mac**, from the same folder. It's one command and runs under launchd:
+
+   ```bash
+   npm i -g ebbgate        # a stable path for launchd (npx's cache can be cleared)
+   ebbgate agent install   # --node <id> only if ebbgate.yaml has several nodes
+   ebbgate runner          # local runner shim on :8787 (separate terminal)
+   ```
+
+   `ebbgate agent uninstall` removes it.
+
+3. **Point Paperclip at it.** Set the agent's `http` adapter to `http://127.0.0.1:8790/run` with `Authorization: Bearer <EG_PAPERCLIP_SECRET from .env>`.
+
+4. **Run `ebbgate doctor` again**: all PASS.
+
+Want non-private work to spill over to the cloud when your Mac is away? Re-run `npx ebbgate init --force --cloud-runner https://…`. Existing secrets are kept, and private work still never goes there.
+
+> Until the npm package is published, run the same commands from a checkout: `pnpm install && pnpm build`, then `pnpm ebbgate init`, `pnpm ebbgate doctor`, `pnpm ebbgate agent install`.
+
+### Other setups: Docker Compose, more machines
 
 ```bash
 git clone https://github.com/patilswapnilv/ebbgate.git && cd ebbgate
@@ -59,7 +114,7 @@ docker compose -f examples/compose/docker-compose.yml up --build
 # dispatcher :8790   LiteLLM 127.0.0.1:4000 (requires LITELLM_MASTER_KEY)
 ```
 
-On your Mac, after `pnpm install && pnpm build`, give the node its own token, and only that:
+On each Mac, after `pnpm install && pnpm build`, give the node its own token, and only that:
 
 ```bash
 mkdir -p ~/.ebbgate
@@ -76,20 +131,7 @@ pnpm ebbgate agent install \
 pnpm ebbgate runner   # :8787 shim (separate terminal)
 ```
 
-Point Paperclip agents at `http://127.0.0.1:8790/run` with  
-`Authorization: Bearer <EG_PAPERCLIP_SECRET>`.
-
 Full compose notes: [`examples/compose/README.md`](./examples/compose/README.md).
-
-### Option B — `ebbgate init`
-
-```bash
-pnpm install && pnpm build
-pnpm ebbgate init           # runs in the directory you call it from
-# or: pnpm ebbgate init --yes   (refuses to overwrite existing files without --force)
-```
-
-Writes `ebbgate.yaml`, `.env.example`, and `litellm.config.yaml`, then prints adapter settings and next steps.
 
 ### Demo logging
 
