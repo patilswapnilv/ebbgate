@@ -2,6 +2,7 @@
 import { isEntrypoint, runAgentCli } from "@ebbgate/agent";
 import { runAdmit } from "./admit.js";
 import { runDemoCommand } from "./demo.js";
+import { runDoctorCommand } from "./doctor.js";
 import { runDecisions, runStatusCommand, runWhy } from "./explain.js";
 import { runInit } from "./init.js";
 
@@ -15,19 +16,33 @@ async function main(argv: string[]): Promise<void> {
   const [cmd] = argv;
 
   if (cmd === "init") {
-    const yes = argv.includes("--yes") || argv.includes("-y");
-    const force = argv.includes("--force");
-    const result = await runInit({ yes, force });
+    const args = argv.slice(1);
+    const yes = args.includes("--yes") || args.includes("-y");
+    const force = args.includes("--force");
+    const node = flag(args, "--node");
+    const publicUrl = flag(args, "--public-url");
+    const cloudRunner = flag(args, "--cloud-runner");
+    const paperclipApiUrl = flag(args, "--paperclip-url");
+    const result = await runInit({
+      yes,
+      force,
+      answers: {
+        ...(node ? { nodes: [{ id: node, prefer: true }] } : {}),
+        ...(publicUrl ? { publicUrl } : {}),
+        ...(cloudRunner ? { cloudRunner } : {}),
+        ...(paperclipApiUrl ? { paperclipApiUrl } : {}),
+      },
+    });
     if (yes) {
-      console.log(`wrote:\n${result.files.map((f) => `  ${f}`).join("\n")}`);
-      console.log(
-        `\nPaperclip http adapter URL: ${result.answers.publicUrl.replace(/\/$/, "")}/run`,
-      );
-      console.log(`EG_PAPERCLIP_SECRET=${result.sharedSecret}`);
-      for (const [k, v] of Object.entries(result.nodeSecrets)) {
-        console.log(`${k}=${v}`);
-      }
+      // Secrets stay in the 0600 file; the summary masks them.
+      console.log(`wrote:\n${result.files.map((f) => `  ${f}`).join("\n")}\n`);
+      console.log(result.summary);
     }
+    return;
+  }
+
+  if (cmd === "doctor") {
+    process.exitCode = await runDoctorCommand(argv.slice(1));
     return;
   }
 
@@ -61,10 +76,14 @@ async function main(argv: string[]): Promise<void> {
 
 Usage:
   ebbgate demo [--fast]          60-second simulation, no setup needed
-  ebbgate init [--yes] [--force]
+  ebbgate init [--yes] [--force] [--node ID] [--public-url URL] [--cloud-runner URL]
+               [--paperclip-url URL]
+                                 write ebbgate.yaml + .env (secrets, mode 600)
+  ebbgate doctor [--json] [--config PATH]
+                                 check the setup; exit 1 on any failure
   ebbgate admit --node <id> | --remote [--agent <id>] [--private]
                                  admission probe (exit 0 admit, non-zero refuse)
-  ebbgate agent install|uninstall|run
+  ebbgate agent install [--node ID]   macOS launchd presence agent (uninstall|run)
   ebbgate busy on|off|auto
   ebbgate status [--json]        presence, queue, and why each waiting task waits
   ebbgate why <taskId> [--json]  every routing decision for a task, and why
@@ -77,6 +96,12 @@ Usage:
 
   // Delegate local node commands to @ebbgate/agent
   await runAgentCli(argv);
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  const v = i >= 0 ? args[i + 1] : undefined;
+  return v && !v.startsWith("--") ? v : undefined;
 }
 
 if (isEntrypoint(import.meta.url)) {

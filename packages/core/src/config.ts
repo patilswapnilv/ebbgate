@@ -87,7 +87,11 @@ export const configSchema = z
           .strict(),
       )
       .refine((n) => Object.keys(n).length > 0, { message: "configure at least one node" }),
-    cloud: z.object({ runner: z.url() }).strict(),
+    /**
+     * Optional. Without a cloud runner nothing ever leaves your machines: every rule
+     * must use local actions or `defer` (checked at load time).
+     */
+    cloud: z.object({ runner: z.url() }).strict().optional(),
     paperclip: z
       .object({
         apiUrl: z.url(),
@@ -319,8 +323,10 @@ export function validateRunnerSeparation(
   config: Pick<EbbgateConfig, "nodes" | "cloud">,
 ): ConfigIssue[] {
   const issues: ConfigIssue[] = [];
+  const cloudRunner = config.cloud?.runner;
+  if (!cloudRunner) return issues; // no cloud runner: nothing to collide with
   for (const [id, n] of Object.entries(config.nodes)) {
-    if (sameEndpoint(n.runner, config.cloud.runner)) {
+    if (sameEndpoint(n.runner, cloudRunner)) {
       issues.push({
         path: `nodes.${id}.runner`,
         message:
@@ -346,6 +352,25 @@ function validateStructure(config: EbbgateConfig): ConfigIssue[] {
       message: "the `default` rule must be the last rule (rules after it can never match)",
     });
   }
+  if (!config.cloud) issues.push(...validateNoCloudRunner(config.policies));
+  return issues;
+}
+
+/** With no `cloud.runner` configured, no rule may send work to the cloud. */
+function validateNoCloudRunner(policies: readonly PolicyRule[]): ConfigIssue[] {
+  const issues: ConfigIssue[] = [];
+  policies.forEach((rule, i) => {
+    const actions = isDefaultRule(rule) ? rule.default : rule;
+    for (const state of ["available", "busy", "offline"] as const) {
+      if (actions[state] === "cloud") {
+        issues.push({
+          path: `policies.${i}${isDefaultRule(rule) ? ".default" : ""}.${state}`,
+          message:
+            "no cloud runner is configured; use 'defer' or a local action, or add `cloud: { runner: <url> }`",
+        });
+      }
+    }
+  });
   return issues;
 }
 

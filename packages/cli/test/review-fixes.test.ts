@@ -121,7 +121,7 @@ describe("ebbgate init never overwrites silently", () => {
 
   it("writes freely into an empty directory", async () => {
     const result = await runInit({ cwd: dir, yes: true, fetch: offline });
-    expect(result.files).toHaveLength(3);
+    expect(result.files).toHaveLength(4);
   });
 });
 

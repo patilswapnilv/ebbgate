@@ -359,7 +359,7 @@ export function createPresenceService(deps: {
     const replacementId = `${run.run_id}:${decision.action}`;
     const runnerUrl =
       decision.action === "cloud"
-        ? config.cloud.runner
+        ? config.cloud?.runner
         : Object.hasOwn(config.nodes, decision.node)
           ? config.nodes[decision.node]?.runner
           : undefined;

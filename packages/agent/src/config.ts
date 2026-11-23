@@ -48,9 +48,9 @@ export function readNodeId(env: NodeJS.ProcessEnv = process.env): string | undef
   }
 }
 
-export function writeNodeId(node: string): void {
-  mkdirSync(EBBGATE_DIR, { recursive: true });
-  writeFileSync(NODE_FILE, `${node}\n`, { mode: 0o600 });
+export function writeNodeId(node: string, path = NODE_FILE): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${node}\n`, { mode: 0o600 });
 }
 
 export function readAgentLocalFile(path = AGENT_CONFIG_FILE): AgentLocalFile {
@@ -62,7 +62,7 @@ export function readAgentLocalFile(path = AGENT_CONFIG_FILE): AgentLocalFile {
 }
 
 export function writeAgentLocalFile(data: AgentLocalFile, path = AGENT_CONFIG_FILE): void {
-  mkdirSync(EBBGATE_DIR, { recursive: true });
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
 }
 

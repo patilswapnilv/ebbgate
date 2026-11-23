@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
-import { loadAgentRuntime } from "./config.js";
+import { loadAgentRuntime, readAgentLocalFile, resolveConfigPath } from "./config.js";
 import { runDaemon } from "./daemon.js";
-import { installAgent, uninstallAgent } from "./install.js";
+import { inferNodeId, installAgent, uninstallAgent } from "./install.js";
 import { busyArgToMode, writeMode } from "./mode.js";
 import { DEFAULT_RUNNER_PORT } from "./paths.js";
 import { startRunnerShim } from "./runner.js";
@@ -18,25 +18,39 @@ export async function main(argv: string[]): Promise<void> {
   if (cmd === "agent") {
     if (sub === "install") {
       const opts = parseFlags(rest);
-      const node = opts.node ?? process.env.EBBGATE_NODE;
-      if (!node) {
-        throw new Error("ebbgate agent install requires --node <id>");
-      }
+      const configPath = opts.config ? resolve(opts.config) : undefined;
+      // One node in the config (the `ebbgate init` default)? Then --node is optional.
+      const node =
+        opts.node ??
+        process.env.EBBGATE_NODE ??
+        inferNodeId(configPath ?? resolveConfigPath(process.env, readAgentLocalFile()));
       const result = await installAgent({
         node,
         ...(opts.dispatcher ? { dispatcherUrl: opts.dispatcher } : {}),
         ...(opts.gateway ? { gatewayUrl: opts.gateway } : {}),
-        ...(opts.config ? { configPath: resolve(opts.config) } : {}),
+        ...(configPath ? { configPath } : {}),
         ...(opts.runnerHost ? { runnerHost: opts.runnerHost } : {}),
         ...(opts.envFile ? { envFile: resolve(opts.envFile) } : {}),
       });
       console.log(`installed launch agent → ${result.plistPath}`);
-      console.log(`node=${node}`);
+      console.log(`node=${node} dispatcher=${result.settings.dispatcherUrl}`);
+      console.log(`config=${result.settings.configPath}`);
+      if (/[/\\]_npx[/\\]/.test(process.argv[1] ?? "")) {
+        console.log(
+          "note: running from the npx cache, which can be cleared. For a stable path: " +
+            "npm i -g ebbgate && ebbgate agent install",
+        );
+      }
+      console.log("check it: ebbgate doctor   (logs: /tmp/ebbgate-agent.err.log)");
       return;
     }
     if (sub === "uninstall") {
-      await uninstallAgent({});
-      console.log("uninstalled launch agent");
+      const result = await uninstallAgent({});
+      console.log(
+        result.removed
+          ? `uninstalled launch agent (removed ${result.plistPath})`
+          : "launch agent was not installed",
+      );
       return;
     }
     if (sub === "run") {
@@ -140,7 +154,7 @@ function helpText(): string {
   return `ebbgate — local presence agent and runner shim
 
 Usage:
-  ebbgate agent install --node <id> [--dispatcher URL] [--gateway URL] [--config PATH]
+  ebbgate agent install [--node <id>] [--dispatcher URL] [--gateway URL] [--config PATH]
                         [--runner-host HOST] [--env-file PATH]
   ebbgate agent uninstall
   ebbgate agent run
