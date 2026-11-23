@@ -177,6 +177,18 @@ export async function runAdmit(argv: string[], deps: AdmitDeps = {}): Promise<nu
       log("ebbgate admit: refuse (dispatcher answer had no admit field)");
       return ADMIT_EXIT.error;
     }
+    // Client-side check of the core guarantee, so a buggy or spoofed dispatcher
+    // still cannot admit private work into a remote environment.
+    if (
+      r.admit === true &&
+      args.target.kind === "remote" &&
+      (args.issuePrivate || (r.tier !== "internal" && r.tier !== "public"))
+    ) {
+      log(
+        `ebbgate admit: refuse remote (dispatcher admitted tier=${String(r.tier)}${args.issuePrivate ? ", issue is private" : ""}; private work never runs remotely)`,
+      );
+      return ADMIT_EXIT.refuse;
+    }
     const reason = typeof r.reason === "string" ? r.reason : "";
     const why =
       r.why !== null && typeof r.why === "object" ? (r.why as Record<string, unknown>) : {};

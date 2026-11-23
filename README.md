@@ -42,7 +42,7 @@ Paperclip http adapter ───────┘
 | label `local-files` | local              | local-low | defer     |
 | unknown agent       | treated as private |           |           |
 
-Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md).
+Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md), [`docs/durable-queue.md`](./docs/durable-queue.md) (crash recovery, retries, TTL, dead letters).
 
 ## Quickstart (5 minutes)
 
@@ -137,6 +137,8 @@ LiteLLM retries the **next model** when a call fails. Ebbgate chooses the **runt
 | ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
 | Public / internal tasks routed to cloud  | Paperclip wake payload forwarded to `cloud.runner` | —                                                       |
 | Private / deferred / unknown-agent tasks | —                                                  | Payloads stay on disk in the deferred queue until local |
+
+**The guarantee is tested, not just claimed.** An adversarial suite tries to leak private work: unknown agents, spoofed payloads, broken policy files, stale or skewed heartbeats, crashes mid-route, the cloud as the only target, concurrent load and property-based fuzzing. A mutation check then proves the suite catches every defence being removed. Run it with `pnpm test:privacy`. The exact promise, the threat model and what's out of scope are in [`docs/privacy-guarantee.md`](./docs/privacy-guarantee.md).
 
 Auth, redaction, and invariants: [`docs/security.md`](./docs/security.md).
 

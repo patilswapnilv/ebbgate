@@ -1,5 +1,5 @@
 import { type EbbgateConfig, isDefaultRule } from "./config.js";
-import { decide, overallState, resolveTier } from "./policy.js";
+import { decide, mayRunInCloud, overallState, resolveTier } from "./policy.js";
 import { type DecisionReason, describeRule, type ReasonCode, reasonFor } from "./reasons.js";
 import type { Decision, NodeId, NodeStatus, TaskContext, Tier } from "./types.js";
 
@@ -70,7 +70,7 @@ function admitsTarget(decision: Decision, target: AdmissionTarget): boolean {
 /** Explain a refusal: private-remote first, a held task keeps its HELD_* reason. */
 function refusalReason(decision: Decision, input: AdmissionInput, tier: Tier): DecisionReason {
   const ctx = { tier, presence: decision.why.presence, rule: decision.rule };
-  if (tier === "private" && input.target.kind === "remote")
+  if (input.target.kind === "remote" && !mayRunInCloud(tier))
     return reasonFor("REFUSE_PRIVATE_REMOTE", ctx);
   if (decision.action === "defer") return decision.why;
   const where = decision.action === "local" ? `local on ${decision.node}` : "cloud";
@@ -96,11 +96,11 @@ export function decideAdmission(
 ): AdmissionResult {
   const tier = admissionTier(input, config);
 
-  const presence = overallState(nodes.filter((n) => config.nodes[n.node] !== undefined));
+  const presence = overallState(nodes.filter((n) => Object.hasOwn(config.nodes, n.node)));
   const why = (code: ReasonCode, rule: Decision["rule"], detail?: string): DecisionReason =>
     reasonFor(code, { tier, presence, rule, ...(detail ? { detail } : {}) });
 
-  if (input.target.kind === "node" && config.nodes[input.target.node] === undefined) {
+  if (input.target.kind === "node" && !Object.hasOwn(config.nodes, input.target.node)) {
     return {
       admit: false,
       tier,
@@ -131,7 +131,7 @@ export function decideAdmission(
   }
 
   // Defense in depth: the private-never-remote invariant, independent of decide().
-  if (tier === "private" && input.target.kind === "remote") {
+  if (input.target.kind === "remote" && !mayRunInCloud(tier)) {
     return {
       admit: false,
       tier,

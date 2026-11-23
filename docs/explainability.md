@@ -43,7 +43,7 @@ saw and the matched `rule` (index or `default`).
 
 ## Audit log
 
-Table `decision_audit` (migration `005_decision_audit.sql`), separate from the queue.
+Table `decision_audit` (migration `006_decision_audit.sql`), separate from the queue.
 One row per decision: kind (`route` / `admission`), task (run) id, agent id, issue id,
 environment id (admission), decision, target (node id, `cloud`, `queue`, `remote`),
 tier, reason code and text, rule, presence state, timestamp.

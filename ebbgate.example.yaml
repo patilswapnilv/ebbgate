@@ -56,7 +56,15 @@ policies:
 presence:
   offlineAfterSeconds: 90
   drainConcurrency: 2
-  deferredMaxAgeHours: 72
+  deferredMaxAgeHours: 72 # default TTL for deferred tasks (per agent: agents.<id>.deferTtlHours)
+
+# Durable defer queue (optional; defaults shown). See docs/durable-queue.md.
+# queue:
+#   maxAttempts: 10           # wake attempts before a task is dead-lettered
+#   retryBaseSeconds: 5       # first retry delay, doubles per attempt
+#   retryMaxSeconds: 900      # retry delay cap
+#   leaseSeconds: 300         # an unconfirmed claim is reclaimed after this
+#   shutdownGraceSeconds: 10  # how long SIGTERM waits for in-flight work
 
 notify:
   telegram: { botToken: "${TG_BOT_TOKEN}", chatId: "${TG_CHAT_ID}" }
