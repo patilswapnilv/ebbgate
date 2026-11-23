@@ -10,7 +10,9 @@ export function nodesRoutes(): Hono<AppEnv> {
 
   app.post("/nodes/:id/mode", async (c) => {
     const id = c.req.param("id");
-    const nodeCfg = c.get("config").nodes[id];
+    const nodes = c.get("config").nodes;
+    // Own keys only: ids like "constructor" must not resolve to Object.prototype members.
+    const nodeCfg = Object.hasOwn(nodes, id) ? nodes[id] : undefined;
     if (!nodeCfg) return c.json({ error: "unknown node" }, 404);
     if (!bearerMatches(c.req.header("authorization"), nodeCfg.token)) {
       return c.json({ error: "unauthorized" }, 401);

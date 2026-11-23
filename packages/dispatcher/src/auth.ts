@@ -9,7 +9,7 @@ export function extractBearer(header: string | undefined | null): string | null 
 
 export function bearerMatches(header: string | undefined | null, expected: string): boolean {
   const got = extractBearer(header);
-  if (got === null) return false;
+  if (got === null || typeof expected !== "string" || expected.length === 0) return false;
   const a = Buffer.from(got);
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;

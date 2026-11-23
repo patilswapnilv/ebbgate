@@ -1,4 +1,4 @@
-import { decide, resolveTier, type TaskContext } from "@ebbgate/core";
+import { decide, mayRunInCloud, resolveTier, type TaskContext } from "@ebbgate/core";
 import { Hono } from "hono";
 import type { AppEnv } from "../app-types.js";
 import { bearerMatches } from "../auth.js";
@@ -115,7 +115,7 @@ export function runRoutes(): Hono<AppEnv> {
     }
 
     if (decision.action === "cloud") {
-      if (tier === "private") {
+      if (!mayRunInCloud(tier)) {
         // Defense in depth — should be unreachable given decide() guard.
         logger.error({ runId: task.runId }, "refusing cloud dispatch for private tier");
         return c.json({ error: "private tasks never run in the cloud" }, 500);
@@ -139,6 +139,7 @@ export function runRoutes(): Hono<AppEnv> {
           {
             timeoutMs: config.server.runnerTimeoutMs,
             idempotencyKey: idempotencyKeyFor(task.runId),
+            forwardAuthorization: false,
           },
         );
         settle(task.runId, result.status);
@@ -152,7 +153,9 @@ export function runRoutes(): Hono<AppEnv> {
 
     // local
     const nodeId = decision.node;
-    const runnerUrl = config.nodes[nodeId]?.runner;
+    const runnerUrl = Object.hasOwn(config.nodes, nodeId)
+      ? config.nodes[nodeId]?.runner
+      : undefined;
     if (!runnerUrl) {
       return c.json({ error: `no runner for node ${nodeId}` }, 500);
     }

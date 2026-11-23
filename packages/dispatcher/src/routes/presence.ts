@@ -23,7 +23,9 @@ export function presenceRoutes(): Hono<AppEnv> {
     if (typeof node !== "string" || node.length === 0) {
       return c.json({ error: "missing node" }, 400);
     }
-    const nodeCfg = c.get("config").nodes[node];
+    const nodes = c.get("config").nodes;
+    // Own keys only: ids like "constructor" must not resolve to Object.prototype members.
+    const nodeCfg = Object.hasOwn(nodes, node) ? nodes[node] : undefined;
     if (!nodeCfg) return c.json({ error: "unknown node" }, 404);
     if (!bearerMatches(c.req.header("authorization"), nodeCfg.token)) {
       return c.json({ error: "unauthorized" }, 401);
