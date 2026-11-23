@@ -44,6 +44,12 @@ Paperclip http adapter ───────┘
 
 Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md), [`docs/durable-queue.md`](./docs/durable-queue.md) (crash recovery, retries, TTL, dead letters).
 
+## Prerequisites
+
+Ebbgate sits in front of [Paperclip](https://paperclip.ing) and talks to a local model runtime. If you are starting from a machine with nothing installed, follow **[Getting started](./docs/getting-started.md)** first — it is the "Before you start: install Paperclip" path, in order: Node.js 24.11+ (Ebbgate alone accepts 22, but Paperclip needs 24.11), Ollama and a model, a running Paperclip instance and a `PAPERCLIP_API_KEY`, then Ebbgate.
+
+The demo at the top of this README needs none of that. From a machine that already has the prerequisites, the Quickstart below takes about five minutes. A clean machine is closer to an hour, mostly the model download and Paperclip setup. Those times are estimates; we have not timed a clean-machine run yet.
+
 ## Quickstart (5 minutes)
 
 Try it first with `npx ebbgate demo` (above). For a real setup, in an empty folder:
