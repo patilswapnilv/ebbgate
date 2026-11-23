@@ -2,15 +2,21 @@
 
 **Agents flow to the cloud when your machine sleeps. Private work waits at the gate.**
 
-<!-- GIF placeholder: laptop lid closes → Telegram “deferred” → lid opens → agent resumes -->
-> _Demo GIF coming soon — lid closes → notify → lid opens → deferred work wakes._
+```bash
+npx ebbgate demo
+```
+
+60 seconds, nothing to set up: no Paperclip, no Docker, no API keys. The real dispatcher runs in-process against a fake Paperclip and shows your Mac going offline, an internal task moving to the cloud, a private task waiting at the gate, and that task running locally the moment the Mac is back.
+
+<!-- GIF placeholder: record `npx ebbgate demo` (asciinema/vhs) and embed it here, e.g. docs/demo.gif -->
+> _Demo GIF coming soon: `npx ebbgate demo` in one take._
 
 [![CI](https://github.com/patilswapnilv/ebbgate/actions/workflows/ci.yml/badge.svg)](https://github.com/patilswapnilv/ebbgate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 A presence-aware **task dispatcher** for AI agents orchestrated by [Paperclip](https://paperclip.ing).
 
-> **Status: v0.1.0, early.** Everything below runs from a source checkout (`pnpm install && pnpm build`). Not yet published to npm. The Paperclip integration is built against documented adapter shapes; spots still to confirm against a live Paperclip are marked `TODO(verify-paperclip)`.
+> **Status: v0.1.0, early.** `npx ebbgate demo` works once the package is published to npm; until then run it from a checkout with `pnpm install && pnpm build && pnpm ebbgate demo`. The Paperclip integration is built against documented adapter shapes; spots still to confirm against a live Paperclip are marked `TODO(verify-paperclip)`.
 
 ## Why
 
@@ -39,6 +45,8 @@ Paperclip http adapter ───────┘
 Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md).
 
 ## Quickstart (5 minutes)
+
+Try it first with `npx ebbgate demo` (above). For a real setup:
 
 ### Option A — Docker Compose
 
@@ -119,16 +127,16 @@ Auth, redaction, and invariants: [`docs/security.md`](./docs/security.md).
 
 ## Roadmap
 
-| Milestone                    | Status                                                                      |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| M1 Core + policy             | done                                                                        |
-| M2 Dispatcher                | done                                                                        |
-| M3 Presence agent + SwiftBar | done                                                                        |
-| M4 Init + compose            | done                                                                        |
-| M5 Docs + `EG_DEMO`          | done                                                                        |
-| v0.1.0                       | M1–M5 on `main`; not yet published to npm (run from source, see Quickstart) |
-| Next                         | `ebbgate demo`, npm package, `ebbgate admit` for Paperclip admission        |
-| Later                        | Windows/Linux agents, menu-bar app, multi-user auth, more orchestrators     |
+| Milestone                    | Status                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| M1 Core + policy             | done                                                                     |
+| M2 Dispatcher                | done                                                                     |
+| M3 Presence agent + SwiftBar | done                                                                     |
+| M4 Init + compose            | done                                                                     |
+| M5 Docs + `EG_DEMO`          | done                                                                     |
+| v0.1.0                       | M1–M5 on `main`, `ebbgate demo`, npm package `ebbgate` (publish pending) |
+| Next                         | `ebbgate admit` for Paperclip admission                                  |
+| Later                        | Windows/Linux agents, menu-bar app, multi-user auth, more orchestrators  |
 
 Source of truth while building: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
 
@@ -138,6 +146,8 @@ Source of truth while building: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
 pnpm install
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
+
+User-visible change? Add a changeset: `pnpm changeset`. Releases are published from the **Release** workflow (tag `v*` or manual run); see [`.changeset/README.md`](./.changeset/README.md).
 
 - One milestone-sized change at a time; keep `@ebbgate/core` free of I/O.
 - Never invent Paperclip API shapes — fixtures + `TODO(verify-paperclip)` if unsure.

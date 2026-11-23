@@ -13,12 +13,12 @@ Ebbgate sits between [Paperclip](https://paperclip.ing) and your agent runtimes.
 
 ## Packages
 
-| Package               | Role                                                                            |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `@ebbgate/core`       | Pure types, zod config, `decide()` / `deriveState()` / `resolveTier()`. No I/O. |
-| `@ebbgate/dispatcher` | Hono HTTP server, SQLite, Paperclip client, notifier.                           |
-| `@ebbgate/agent`      | macOS collectors, launchd install, `busy` CLI, local runner shim.               |
-| `@ebbgate/cli`        | `ebbgate` bin: `init` wizard + delegates node commands to the agent.            |
+| Package                    | Role                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@ebbgate/core`            | Pure types, zod config, `decide()` / `deriveState()` / `resolveTier()`. No I/O.                                                                  |
+| `@ebbgate/dispatcher`      | Hono HTTP server, SQLite, Paperclip client, notifier.                                                                                            |
+| `@ebbgate/agent`           | macOS collectors, launchd install, `busy` CLI, local runner shim.                                                                                |
+| `ebbgate` (`packages/cli`) | Published npm package and `ebbgate` bin: `demo`, `init` wizard, delegates node commands to the agent. Bundles the private `@ebbgate/*` packages. |
 
 ## Decision path
 

@@ -7,6 +7,12 @@ export default defineConfig({
     alias: {
       "@ebbgate/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
       "@ebbgate/agent": fileURLToPath(new URL("./packages/agent/src/index.ts", import.meta.url)),
+      "@ebbgate/dispatcher/demo": fileURLToPath(
+        new URL("./packages/dispatcher/src/demo-scenario.ts", import.meta.url),
+      ),
+      "@ebbgate/dispatcher": fileURLToPath(
+        new URL("./packages/dispatcher/src/index.ts", import.meta.url),
+      ),
       "@ebbgate/cli": fileURLToPath(new URL("./packages/cli/src/index.ts", import.meta.url)),
     },
   },

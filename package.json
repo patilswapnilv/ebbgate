@@ -16,10 +16,13 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "ebbgate": "node packages/cli/dist/cli.js",
-    "smoke": "node scripts/smoke-startup.mjs"
+    "smoke": "node scripts/smoke-startup.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
     "tsup": "^9.0.0",
     "typescript": "^7.0.2",

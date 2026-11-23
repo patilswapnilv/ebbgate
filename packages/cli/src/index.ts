@@ -1,3 +1,4 @@
+export { DEMO_STEP_DELAY_MS, runDemoCommand } from "./demo.js";
 export { DETECT_DEFAULTS, detectServices } from "./detect.js";
 export { type InitAnswers, renderEbbgateYaml, type Tier } from "./generate/ebbgate-yaml.js";
 export { renderEnvExample } from "./generate/env-example.js";
