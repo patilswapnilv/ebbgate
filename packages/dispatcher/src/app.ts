@@ -5,6 +5,7 @@ import type { Db } from "./db/index.js";
 import { createDemoWriter, type DemoWriter, isDemoMode } from "./demo.js";
 import { createLogger, type Logger } from "./logger.js";
 import type { PaperclipClient } from "./paperclip/types.js";
+import { admitRoutes } from "./routes/admit.js";
 import { healthzRoutes } from "./routes/healthz.js";
 import { nodesRoutes } from "./routes/nodes.js";
 import { presenceRoutes } from "./routes/presence.js";
@@ -72,6 +73,7 @@ export function createApp(opts: CreateAppOptions): AppHandle {
   app.route("/", presenceRoutes());
   app.route("/", nodesRoutes());
   app.route("/", runRoutes());
+  app.route("/", admitRoutes());
 
   return {
     app,

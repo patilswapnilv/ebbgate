@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { isEntrypoint, runAgentCli } from "@ebbgate/agent";
+import { runAdmit } from "./admit.js";
 import { runDemoCommand } from "./demo.js";
 import { runInit } from "./init.js";
 
@@ -29,6 +30,11 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "admit") {
+    process.exitCode = await runAdmit(argv.slice(1));
+    return;
+  }
+
   if (cmd === "demo") {
     await runDemoCommand(argv.slice(1));
     return;
@@ -40,6 +46,8 @@ async function main(argv: string[]): Promise<void> {
 Usage:
   ebbgate demo [--fast]          60-second simulation, no setup needed
   ebbgate init [--yes] [--force]
+  ebbgate admit --node <id> | --remote [--agent <id>] [--private]
+                                 admission probe (exit 0 admit, non-zero refuse)
   ebbgate agent install|uninstall|run
   ebbgate busy on|off|auto
   ebbgate status

@@ -1,4 +1,11 @@
 export {
+  type AdmissionInput,
+  type AdmissionResult,
+  type AdmissionTarget,
+  admissionTier,
+  decideAdmission,
+} from "./admission.js";
+export {
   ConfigError,
   type ConfigIssue,
   configSchema,
