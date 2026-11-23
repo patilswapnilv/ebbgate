@@ -1,3 +1,4 @@
+export { ADMIT_EXIT, DEFAULT_ADMIT_TIMEOUT_MS, parseAdmitArgs, runAdmit } from "./admit.js";
 export { DEMO_STEP_DELAY_MS, runDemoCommand } from "./demo.js";
 export { DETECT_DEFAULTS, detectServices } from "./detect.js";
 export { type InitAnswers, renderEbbgateYaml, type Tier } from "./generate/ebbgate-yaml.js";

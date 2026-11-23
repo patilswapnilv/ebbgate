@@ -105,7 +105,7 @@ Annotated example: [`ebbgate.example.yaml`](./ebbgate.example.yaml). Rules are f
 
 ## Works with
 
-- **Paperclip** — `http` adapter → Ebbgate `/run`
+- **Paperclip** — `http` adapter → Ebbgate `/run`; or `ebbgate admit` as an environment `admissionCommand` ([`docs/paperclip-admission.md`](./docs/paperclip-admission.md), for the proposed fallback environments in [paperclip#17402](https://github.com/paperclipai/paperclip/pull/17402))
 - **LiteLLM** — model aliases (`private-fast`, `internal-smart`, …)
 - **Ollama / LM Studio** — local models on the node
 - **OpenClaw** — local/cloud gateway behind the runner shim  
@@ -127,16 +127,16 @@ Auth, redaction, and invariants: [`docs/security.md`](./docs/security.md).
 
 ## Roadmap
 
-| Milestone                    | Status                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| M1 Core + policy             | done                                                                     |
-| M2 Dispatcher                | done                                                                     |
-| M3 Presence agent + SwiftBar | done                                                                     |
-| M4 Init + compose            | done                                                                     |
-| M5 Docs + `EG_DEMO`          | done                                                                     |
-| v0.1.0                       | M1–M5 on `main`, `ebbgate demo`, npm package `ebbgate` (publish pending) |
-| Next                         | `ebbgate admit` for Paperclip admission                                  |
-| Later                        | Windows/Linux agents, menu-bar app, multi-user auth, more orchestrators  |
+| Milestone                    | Status                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| M1 Core + policy             | done                                                                                      |
+| M2 Dispatcher                | done                                                                                      |
+| M3 Presence agent + SwiftBar | done                                                                                      |
+| M4 Init + compose            | done                                                                                      |
+| M5 Docs + `EG_DEMO`          | done                                                                                      |
+| v0.1.0                       | M1–M5 on `main`, `ebbgate demo`, `ebbgate admit`, npm package `ebbgate` (publish pending) |
+| Next                         | Paperclip plugin for held runs, run context for admission (upstream)                      |
+| Later                        | Windows/Linux agents, menu-bar app, multi-user auth, more orchestrators                   |
 
 Source of truth while building: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
 

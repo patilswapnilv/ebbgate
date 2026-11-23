@@ -16,10 +16,12 @@ First usable release: M1–M5 from `BUILD_SPEC.md`.
 
 - **`ebbgate demo`** — 60-second, zero-setup simulation (real dispatcher in-process, fake Paperclip and runners): local routing, cloud for non-private work, a private task deferred while offline and drained on return.
 - **npm package `ebbgate`** — publishable CLI bundling the workspace packages; changesets; tag/manual Release workflow (uses the `NPM_TOKEN` secret); macOS CI job.
+- **`ebbgate admit`** — admission probe for Paperclip's proposed per-environment `admissionCommand` (paperclip#17402): exit 0 admits, non-zero refuses; private + node offline refuses everywhere so Paperclip holds the run; fails closed on any error or timeout. Backed by a read-only dispatcher `POST /admit` and `decideAdmission()` in `@ebbgate/core`. Docs: `docs/paperclip-admission.md`.
 
 ### Known gaps
 
 - npm publish has not happened yet.
+- `ebbgate admit` targets an unmerged Paperclip PR; Paperclip passes no run context to admission commands yet.
 - Paperclip handshake details marked `TODO(verify-paperclip)` are untested against a live Paperclip.
 
 [0.1.0]: https://github.com/patilswapnilv/ebbgate/compare/8959091...v0.1.0
