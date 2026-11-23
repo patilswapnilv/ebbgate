@@ -39,7 +39,13 @@ Transitions:
 
 ## Storage
 
-SQLite file (default `./data/ebbgate.db`): `nodes`, `runs`, `deferred`, `decisions`. Plain SQL migrations at startup.
+SQLite file (default `./data/ebbgate.db`): `nodes`, `runs`, `deferred`, `decisions`, and the append-only `decision_audit` log (reason codes, no payloads; retention by age and row cap). Plain, forward-only SQL migrations at startup. WAL mode, `synchronous = FULL`, `busy_timeout = 5000`.
+
+The deferred queue is durable: claims are leases reclaimed after a crash, every task has one idempotency key reused on every retry, failed wakes back off exponentially and are dead-lettered after `queue.maxAttempts`, each task has a TTL with a recorded terminal reason, and shutdown releases claims. Re-submitted runs are deduplicated at `/run`. See [`durable-queue.md`](./durable-queue.md).
+
+## Explainability
+
+`decide()` and `decideAdmission()` return a structured reason (`why`: stable code + short sentence, tier, presence, rule). The dispatcher audits every decision and serves `GET /status` (why each waiting task waits) and `GET /decisions`. See [`explainability.md`](./explainability.md).
 
 ## Demo mode
 

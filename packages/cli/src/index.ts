@@ -10,6 +10,13 @@ export {
   runDoctor,
   runDoctorCommand,
 } from "./doctor.js";
+export {
+  EXPLAIN_EXIT,
+  parseExplainArgs,
+  runDecisions,
+  runStatusCommand,
+  runWhy,
+} from "./explain.js";
 export { type InitAnswers, renderEbbgateYaml, type Tier } from "./generate/ebbgate-yaml.js";
 export { renderEnvExample } from "./generate/env-example.js";
 export { renderLitellmConfig } from "./generate/litellm.js";

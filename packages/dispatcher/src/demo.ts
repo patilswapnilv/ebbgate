@@ -38,6 +38,7 @@ export function logDemoDecision(
   write(`│  tier    ${tier}${task.labels.length ? `  labels=${task.labels.join(",")}` : ""}`);
   write(`│  nodes   ${nodeSummary}`);
   write(`│  action  ${action}`);
+  write(`│  why     ${decision.why.code}: ${decision.why.text}`);
   write(`│  reason  ${decision.reason}`);
   write("└────────────────────────────────────────────");
 }

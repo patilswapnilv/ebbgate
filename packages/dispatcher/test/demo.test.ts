@@ -1,4 +1,4 @@
-import type { Decision, NodeStatus, TaskContext } from "@ebbgate/core";
+import { type Decision, type NodeStatus, reasonFor, type TaskContext } from "@ebbgate/core";
 import { describe, expect, it } from "vitest";
 import { createDemoWriter, isDemoMode, logDemoDecision, logDemoPresence } from "../src/demo.js";
 
@@ -37,10 +37,16 @@ describe("EG_DEMO helpers", () => {
       reason: "rule #1, tier=private, nodes=offline -> defer",
       notify: false,
       rule: 1,
+      why: reasonFor("HELD_PRIVATE_MAC_OFFLINE", {
+        tier: "private",
+        presence: "offline",
+        rule: 1,
+      }),
     };
     logDemoDecision(write, { task, tier: "private", nodes, decision });
     const text = lines.join("\n");
     expect(text).toContain("ebbgate decision");
+    expect(text).toContain("why     HELD_PRIVATE_MAC_OFFLINE: held because it's private");
     expect(text).toContain("run     run-1");
     expect(text).toContain("agent   agent_inbox");
     expect(text).toContain("issue   issue-9");

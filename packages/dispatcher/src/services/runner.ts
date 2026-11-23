@@ -12,6 +12,13 @@ export interface ForwardOptions {
    * recognise a re-dispatch of work it may already have received.
    */
   idempotencyKey?: string;
+  /**
+   * Pass the caller's Authorization header on. Off for the cloud runner: that
+   * header is the dispatcher's own shared secret, and a cloud runner holding it
+   * could call `/status`, `/admit` or `/run` as Paperclip (and read private
+   * in-flight payloads from `/status`). Default true, for local runners.
+   */
+  forwardAuthorization?: boolean;
 }
 
 /** Forward the original Paperclip payload to a local or cloud runner. */
@@ -24,7 +31,7 @@ export async function forwardToRunner(
 ): Promise<RunnerResult> {
   const out = new Headers();
   const auth = headers.get("authorization");
-  if (auth) out.set("authorization", auth);
+  if (auth && opts.forwardAuthorization !== false) out.set("authorization", auth);
   out.set("content-type", "application/json");
   if (opts.idempotencyKey) out.set("idempotency-key", opts.idempotencyKey);
   // TODO(verify-paperclip): which headers runners expect beyond Authorization.

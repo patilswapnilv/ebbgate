@@ -42,7 +42,7 @@ Paperclip http adapter ───────┘
 | label `local-files` | local              | local-low | defer     |
 | unknown agent       | treated as private |           |           |
 
-Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md).
+Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md), [`docs/durable-queue.md`](./docs/durable-queue.md) (crash recovery, retries, TTL, dead letters).
 
 ## Quickstart (5 minutes)
 
@@ -141,6 +141,21 @@ EG_DEMO=1 node packages/dispatcher/dist/index.js
 
 Prints plain-text decision blocks (no secrets) — handy for screen recordings.
 
+### Why is my task waiting?
+
+```bash
+ebbgate status              # presence, queue counts, and why each held task waits
+ebbgate why <taskId>        # every decision for one task (add --json for scripts)
+ebbgate decisions --limit 20
+```
+
+```
+waiting:
+  run-42  agent_inbox  private  12m  HELD_PRIVATE_MAC_OFFLINE: held because it's private and your Mac is offline (rule #1)
+```
+
+Every decision is recorded in an append-only audit log (reason codes only, never payloads). The SwiftBar plugin shows the held count and top reason. See [`docs/explainability.md`](./docs/explainability.md).
+
 ## Policy file
 
 Annotated example: [`ebbgate.example.yaml`](./ebbgate.example.yaml). Rules are first-match; private→cloud is rejected at load time and again at runtime. See [`docs/policy.md`](./docs/policy.md).
@@ -164,6 +179,8 @@ LiteLLM retries the **next model** when a call fails. Ebbgate chooses the **runt
 | ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------------- |
 | Public / internal tasks routed to cloud  | Paperclip wake payload forwarded to `cloud.runner` | —                                                       |
 | Private / deferred / unknown-agent tasks | —                                                  | Payloads stay on disk in the deferred queue until local |
+
+**The guarantee is tested, not just claimed.** An adversarial suite tries to leak private work: unknown agents, spoofed payloads, broken policy files, stale or skewed heartbeats, crashes mid-route, the cloud as the only target, concurrent load and property-based fuzzing. A mutation check then proves the suite catches every defence being removed. Run it with `pnpm test:privacy`. The exact promise, the threat model and what's out of scope are in [`docs/privacy-guarantee.md`](./docs/privacy-guarantee.md).
 
 Auth, redaction, and invariants: [`docs/security.md`](./docs/security.md).
 

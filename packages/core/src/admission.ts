@@ -1,5 +1,6 @@
 import { type EbbgateConfig, isDefaultRule } from "./config.js";
-import { decide, resolveTier } from "./policy.js";
+import { decide, mayRunInCloud, overallState, resolveTier } from "./policy.js";
+import { type DecisionReason, describeRule, type ReasonCode, reasonFor } from "./reasons.js";
 import type { Decision, NodeId, NodeStatus, TaskContext, Tier } from "./types.js";
 
 /**
@@ -29,8 +30,10 @@ export interface AdmissionInput {
 export interface AdmissionResult {
   admit: boolean;
   tier: Tier;
-  /** Human-readable, contains no secrets or payload content. */
+  /** Human-readable trace, contains no secrets or payload content. */
   reason: string;
+  /** Structured explanation: stable code + short sentence (see `REASON_CODES`). */
+  why: DecisionReason;
 }
 
 /** The tier used for admission: config tier, raised to private by any private signal. */
@@ -64,6 +67,19 @@ function admitsTarget(decision: Decision, target: AdmissionTarget): boolean {
   return decision.action === "cloud";
 }
 
+/** Explain a refusal: private-remote first, a held task keeps its HELD_* reason. */
+function refusalReason(decision: Decision, input: AdmissionInput, tier: Tier): DecisionReason {
+  const ctx = { tier, presence: decision.why.presence, rule: decision.rule };
+  if (input.target.kind === "remote" && !mayRunInCloud(tier))
+    return reasonFor("REFUSE_PRIVATE_REMOTE", ctx);
+  if (decision.action === "defer") return decision.why;
+  const where = decision.action === "local" ? `local on ${decision.node}` : "cloud";
+  return reasonFor("REFUSE_ROUTED_ELSEWHERE", {
+    ...ctx,
+    detail: `${where}, ${describeRule(decision.rule)}`,
+  });
+}
+
 /**
  * Decide whether to admit a run into `target`.
  *
@@ -80,8 +96,17 @@ export function decideAdmission(
 ): AdmissionResult {
   const tier = admissionTier(input, config);
 
-  if (input.target.kind === "node" && config.nodes[input.target.node] === undefined) {
-    return { admit: false, tier, reason: `unknown node "${input.target.node}"` };
+  const presence = overallState(nodes.filter((n) => Object.hasOwn(config.nodes, n.node)));
+  const why = (code: ReasonCode, rule: Decision["rule"], detail?: string): DecisionReason =>
+    reasonFor(code, { tier, presence, rule, ...(detail ? { detail } : {}) });
+
+  if (input.target.kind === "node" && !Object.hasOwn(config.nodes, input.target.node)) {
+    return {
+      admit: false,
+      tier,
+      reason: `unknown node "${input.target.node}"`,
+      why: why("REFUSE_UNKNOWN_NODE", "default", input.target.node),
+    };
   }
 
   let last: Decision | undefined;
@@ -100,14 +125,29 @@ export function decideAdmission(
         admit: false,
         tier,
         reason: `refused: ${decision.reason}${labels.length ? ` [labels=${labels.join(",")}]` : ""}`,
+        why: refusalReason(decision, input, tier),
       };
     }
   }
 
   // Defense in depth: the private-never-remote invariant, independent of decide().
-  if (tier === "private" && input.target.kind === "remote") {
-    return { admit: false, tier, reason: "refused: private tasks never run remotely" };
+  if (input.target.kind === "remote" && !mayRunInCloud(tier)) {
+    return {
+      admit: false,
+      tier,
+      reason: "refused: private tasks never run remotely",
+      why: why("REFUSE_PRIVATE_REMOTE", last?.rule ?? "default"),
+    };
   }
 
-  return { admit: true, tier, reason: `admitted: ${last?.reason ?? "policy"}` };
+  const rule = last?.rule ?? "default";
+  return {
+    admit: true,
+    tier,
+    reason: `admitted: ${last?.reason ?? "policy"}`,
+    why:
+      input.target.kind === "node"
+        ? why("ADMIT_NODE", rule, `${input.target.node}, ${describeRule(rule)}`)
+        : why("ADMIT_REMOTE", rule, describeRule(rule)),
+  };
 }

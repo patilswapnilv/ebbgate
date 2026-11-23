@@ -1,6 +1,7 @@
 import { loadAgentRuntime, readNodeId } from "./config.js";
 import { readMode } from "./mode.js";
 import { MODE_FILE, NODE_FILE } from "./paths.js";
+import { formatDispatcherStatus } from "./status-format.js";
 
 export async function printStatus(
   env: NodeJS.ProcessEnv = process.env,
@@ -34,12 +35,15 @@ export async function printStatus(
         const body = (await res.json()) as {
           nodes?: Array<{ node: string; state: string; lastSeenAt: string | null }>;
         };
-        const mine = body.nodes?.find((n) => n.node === rt.node);
+        const mine = Array.isArray(body.nodes)
+          ? body.nodes.find((n) => n.node === rt.node)
+          : undefined;
         if (mine) {
           lines.push(`dispatcher sees: ${mine.state} (lastSeenAt=${mine.lastSeenAt ?? "null"})`);
         } else {
           lines.push("dispatcher sees: (node not listed yet)");
         }
+        lines.push("", ...formatDispatcherStatus(body));
       } else {
         lines.push(`dispatcher /status: HTTP ${res.status}`);
       }
