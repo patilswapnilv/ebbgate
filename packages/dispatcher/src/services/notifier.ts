@@ -7,7 +7,8 @@ export type NotifyEvent =
   | "task_deferred"
   | "queue_drained"
   | "run_interrupted"
-  | "deferred_expired";
+  | "deferred_expired"
+  | "deferred_dead";
 
 export interface Notifier {
   notify(event: NotifyEvent, node: string | null, message: string): Promise<void>;

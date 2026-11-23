@@ -53,6 +53,12 @@ export function recordDecision(
   );
 }
 
+/**
+ * Insert a run as `running`. Idempotent per `run_id`: a re-submit of a run that
+ * previously `failed` is retried in place (Paperclip retries after a dropped
+ * connection); any other existing row is left untouched and false is returned,
+ * so the caller never dispatches the same run twice.
+ */
 export function insertRunning(
   db: Db,
   args: {
@@ -67,22 +73,35 @@ export function insertRunning(
     payload: unknown;
     origin?: RunOrigin;
   },
-): void {
-  db.prepare(
-    `INSERT INTO runs (run_id, issue_id, agent_id, company_id, target, node_id, priority, status, started_at, finished_at, payload_json, origin)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)`,
-  ).run(
-    args.runId,
-    args.issueId ?? null,
-    args.agentId,
-    args.companyId,
-    args.target,
-    args.nodeId ?? null,
-    args.priority ?? null,
-    args.startedAt,
-    JSON.stringify(args.payload),
-    args.origin ?? "ingress",
+): boolean {
+  return (
+    db
+      .prepare(
+        `INSERT INTO runs (run_id, issue_id, agent_id, company_id, target, node_id, priority, status, started_at, finished_at, payload_json, origin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL, ?, ?)
+     ON CONFLICT(run_id) DO UPDATE SET
+       target = excluded.target, node_id = excluded.node_id, priority = excluded.priority,
+       status = 'running', started_at = excluded.started_at, finished_at = NULL,
+       payload_json = excluded.payload_json, dispatched_at = NULL, interrupted_reason = NULL
+     WHERE runs.status = 'failed'`,
+      )
+      .run(
+        args.runId,
+        args.issueId ?? null,
+        args.agentId,
+        args.companyId,
+        args.target,
+        args.nodeId ?? null,
+        args.priority ?? null,
+        args.startedAt,
+        JSON.stringify(args.payload),
+        args.origin ?? "ingress",
+      ).changes === 1
   );
+}
+
+export function getRun(db: Db, runId: string): RunRow | undefined {
+  return db.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(runId) as RunRow | undefined;
 }
 
 /**

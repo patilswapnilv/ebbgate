@@ -18,6 +18,8 @@ First usable release: M1–M5 from `BUILD_SPEC.md`.
 - **npm package `ebbgate`** — publishable CLI bundling the workspace packages; changesets; tag/manual Release workflow (uses the `NPM_TOKEN` secret); macOS CI job.
 - **`ebbgate admit`** — admission probe for Paperclip's proposed per-environment `admissionCommand` (paperclip#17402): exit 0 admits, non-zero refuses; private + node offline refuses everywhere so Paperclip holds the run; fails closed on any error or timeout. Backed by a read-only dispatcher `POST /admit` and `decideAdmission()` in `@ebbgate/core`. Docs: `docs/paperclip-admission.md`.
 
+- **Durable defer queue** — crash-safe wake claims (leases, reclaimed at startup and when they expire), one idempotency key per task with dedupe of re-submitted runs at `/run`, bounded retries with exponential backoff, a `dead` state with the last error recorded, per-task TTL (`agents.<id>.deferTtlHours`) with a recorded terminal reason, graceful shutdown that releases claims, WAL + `synchronous=FULL` + `busy_timeout`. New `queue:` config section and migration `005_durable_queue.sql`. Docs: `docs/durable-queue.md`.
+
 ### Known gaps
 
 - npm publish has not happened yet.

@@ -42,7 +42,7 @@ Paperclip http adapter ───────┘
 | label `local-files` | local              | local-low | defer     |
 | unknown agent       | treated as private |           |           |
 
-Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md).
+Details: [`docs/architecture.md`](./docs/architecture.md), [`docs/policy.md`](./docs/policy.md), [`docs/durable-queue.md`](./docs/durable-queue.md) (crash recovery, retries, TTL, dead letters).
 
 ## Quickstart (5 minutes)
 

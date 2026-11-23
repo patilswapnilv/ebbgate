@@ -24,8 +24,13 @@ export function ensureDbDir(dbPath: string): void {
   mkdirSync(dirname(dbPath), { recursive: true });
 }
 
+/** A listening dispatcher. `shutdown()` stops it gracefully (idempotent). */
+export type DispatcherServer = Server & { shutdown(): Promise<void> };
+
 /** Start the dispatcher from an environment. Resolves once it is listening. */
-export async function startDispatcher(env: NodeJS.ProcessEnv = process.env): Promise<Server> {
+export async function startDispatcher(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<DispatcherServer> {
   const configPath = resolve(env.EBBGATE_CONFIG ?? "ebbgate.yaml");
   const config = loadConfig(readFileSync(configPath, "utf8"), env);
   const logger = createLogger(env.LOG_LEVEL ?? "info");
@@ -58,11 +63,38 @@ export async function startDispatcher(env: NodeJS.ProcessEnv = process.env): Pro
     maxBodyBytes: config.server.maxBodyBytes,
   });
   server.on("close", () => clearInterval(ticker));
+
+  // Graceful shutdown: stop the ticker and new connections, let in-flight drains
+  // and requests finish within the grace period, hand any deferred-queue claims
+  // back, then close the database (WAL is checkpointed on close).
+  const graceMs = config.queue.shutdownGraceSeconds * 1000;
+  let stopping: Promise<void> | null = null;
+  const shutdown = (): Promise<void> => {
+    stopping ??= (async () => {
+      clearInterval(ticker);
+      const closed = new Promise<void>((done) => server.close(() => done()));
+      server.closeIdleConnections();
+      await presence.shutdown({ graceMs });
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        closed,
+        new Promise<void>((done) => {
+          timer = setTimeout(done, graceMs);
+        }),
+      ]);
+      if (timer) clearTimeout(timer);
+      server.closeAllConnections();
+      db.close();
+      logger.info("ebbgate dispatcher stopped");
+    })();
+    return stopping;
+  };
+
   logger.info(
     { host: config.server.host, port: config.server.port },
     "ebbgate dispatcher listening",
   );
-  return server;
+  return Object.assign(server, { shutdown });
 }
 
 /**
@@ -81,7 +113,7 @@ export function formatStartupError(err: unknown): string {
 export async function runMain(
   env: NodeJS.ProcessEnv = process.env,
   writeErr: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
-): Promise<{ code: 0; server: Server } | { code: 1 }> {
+): Promise<{ code: 0; server: DispatcherServer } | { code: 1 }> {
   try {
     return { code: 0, server: await startDispatcher(env) };
   } catch (err) {
@@ -93,5 +125,14 @@ export async function runMain(
 if (isEntrypoint(import.meta.url)) {
   void runMain().then((result) => {
     if (result.code !== 0) process.exit(result.code);
+    const { server } = result;
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+      process.once(signal, () => {
+        void server.shutdown().then(
+          () => process.exit(0),
+          () => process.exit(1),
+        );
+      });
+    }
   });
 }

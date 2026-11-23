@@ -102,7 +102,27 @@ export const configSchema = z
         labelDeferred: z.boolean().default(false),
       })
       .strict(),
-    agents: z.record(z.string().min(1), z.object({ tier: tierSchema }).strict()).default({}),
+    agents: z
+      .record(
+        z.string().min(1),
+        z
+          .object({
+            tier: tierSchema,
+            /**
+             * Optional time-to-live for this agent's deferred tasks, in hours. A task
+             * still queued after this long ends as `expired` (it is never re-routed,
+             * so a private task cannot fall back to the cloud). Defaults to
+             * `presence.deferredMaxAgeHours`.
+             */
+            deferTtlHours: z
+              .number()
+              .positive()
+              .max(24 * 365)
+              .optional(),
+          })
+          .strict(),
+      )
+      .default({}),
     policies: z.array(ruleSchema).min(1),
     presence: z
       .object({
@@ -112,6 +132,28 @@ export const configSchema = z
       })
       .strict()
       .default({ offlineAfterSeconds: 90, drainConcurrency: 2, deferredMaxAgeHours: 72 }),
+    /**
+     * Durability knobs for the deferred queue. Every wake is retried with
+     * exponential backoff (`retryBaseSeconds * 2^(attempt-1)`, capped at
+     * `retryMaxSeconds`) and dead-lettered after `maxAttempts`. A claim not
+     * confirmed within `leaseSeconds` (for example after a crash) is reclaimed.
+     */
+    queue: z
+      .object({
+        maxAttempts: z.number().int().min(1).max(1000).default(10),
+        retryBaseSeconds: z.number().int().min(1).default(5),
+        retryMaxSeconds: z.number().int().min(1).default(900),
+        leaseSeconds: z.number().int().min(10).default(300),
+        shutdownGraceSeconds: z.number().int().min(0).max(600).default(10),
+      })
+      .strict()
+      .default({
+        maxAttempts: 10,
+        retryBaseSeconds: 5,
+        retryMaxSeconds: 900,
+        leaseSeconds: 300,
+        shutdownGraceSeconds: 10,
+      }),
     notify: z
       .object({
         telegram: z.object({ botToken: z.string().min(1), chatId: z.string().min(1) }).strict(),
