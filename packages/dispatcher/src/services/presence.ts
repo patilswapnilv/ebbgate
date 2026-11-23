@@ -18,7 +18,12 @@ import type { Notifier } from "./notifier.js";
 import {
   countPendingDeferred,
   drainDeferred,
+  expiryFor,
+  newLeaseOwner,
   persistDeferred,
+  queuePolicyFrom,
+  reclaimAbandonedClaims,
+  releaseOwnClaims,
   releaseStaleClaims,
 } from "./queue.js";
 import { forwardToRunner, idempotencyKeyFor } from "./runner.js";
@@ -62,6 +67,26 @@ export interface PresenceService {
   reconcileAfterRestart(): Promise<OrphanReport>;
   listNodeStatuses(): NodeStatus[];
   ensureConfiguredNodes(): void;
+  /** Lease owner id for the deferred-queue claims this instance takes. */
+  readonly owner: string;
+  /**
+   * Graceful shutdown: stop starting drains, recovery passes and ticks, wait up
+   * to `graceMs` for the ones in flight, then hand this instance's remaining
+   * queue claims back to `pending` so the next process retries them at once.
+   */
+  shutdown(opts?: { graceMs?: number }): Promise<ShutdownReport>;
+}
+
+export interface ShutdownReport {
+  /** Claims returned to `pending`. */
+  releasedClaims: number;
+  /** True when in-flight work was still running after the grace period. */
+  timedOut: boolean;
+}
+
+/** Spread helper: only set `expiresAt` when a per-task TTL applies. */
+function withExpiry(expiresAt: string | undefined): { expiresAt?: string } {
+  return expiresAt ? { expiresAt } : {};
 }
 
 export function createPresenceService(deps: {
@@ -77,6 +102,11 @@ export function createPresenceService(deps: {
   const { db, config, paperclip, notifier, logger, now } = deps;
   const fetchFn = deps.fetch ?? fetch;
   const demo = deps.demo ?? (() => {});
+  const owner = newLeaseOwner();
+  const policy = queuePolicyFrom(config);
+  let stopping = false;
+  const deferExpiry = (agentId: string, createdAt: string): string | undefined =>
+    expiryFor(createdAt, config.agents[agentId]?.deferTtlHours);
 
   function ensureConfiguredNodes(): void {
     const at = now().toISOString();
@@ -131,6 +161,7 @@ export function createPresenceService(deps: {
   let drainRequested = false;
 
   function drain(): Promise<void> {
+    if (stopping) return Promise.resolve();
     drainRequested = true;
     if (draining) return draining;
     // Start on a later microtask, so `draining` is assigned before the pass can
@@ -148,6 +179,9 @@ export function createPresenceService(deps: {
             clock: now,
             deferredMaxAgeHours: config.presence.deferredMaxAgeHours,
             drainConcurrency: config.presence.drainConcurrency,
+            policy,
+            owner,
+            stopping: () => stopping,
           });
         }
       } finally {
@@ -214,6 +248,7 @@ export function createPresenceService(deps: {
   let recoverRequested = false;
 
   function recoverInterrupted(): Promise<void> {
+    if (stopping) return Promise.resolve();
     recoverRequested = true;
     if (recovering) return recovering;
     // Same pattern as drain(): start asynchronously so an empty pass cannot leave
@@ -279,6 +314,7 @@ export function createPresenceService(deps: {
           reason: decision.reason,
           payload,
           createdAt: decidedAt,
+          ...withExpiry(deferExpiry(run.agent_id, decidedAt)),
         });
         markRecovered(db, run.run_id, decidedAt);
       })();
@@ -309,8 +345,10 @@ export function createPresenceService(deps: {
       return; // left unrecovered: retried on the next pass once config is fixed
     }
 
-    // The replacement run and the recovery marker commit together.
-    db.transaction(() => {
+    // The replacement run and the recovery marker commit together. If the
+    // replacement already exists (and is not a failed one being retried), it is
+    // already dispatched or done: record recovery but never send it twice.
+    const inserted = db.transaction(() => {
       recordDecision(db, {
         runId: run.run_id,
         agentId: run.agent_id,
@@ -319,7 +357,7 @@ export function createPresenceService(deps: {
         decision,
         decidedAt,
       });
-      insertRunning(db, {
+      const fresh = insertRunning(db, {
         runId: replacementId,
         ...(run.issue_id ? { issueId: run.issue_id } : {}),
         agentId: run.agent_id,
@@ -333,7 +371,12 @@ export function createPresenceService(deps: {
         origin: "replacement",
       });
       markRecovered(db, run.run_id, decidedAt);
+      return fresh;
     })();
+    if (!inserted) {
+      logger.info({ runId: replacementId }, "replacement already exists; not dispatched again");
+      return;
+    }
 
     try {
       markDispatched(db, replacementId, now().toISOString());
@@ -398,9 +441,39 @@ export function createPresenceService(deps: {
     listNodeStatuses,
     drain,
     recoverInterrupted,
+    owner,
+
+    async shutdown(opts: { graceMs?: number } = {}): Promise<ShutdownReport> {
+      stopping = true;
+      const graceMs = opts.graceMs ?? config.queue.shutdownGraceSeconds * 1000;
+      const inFlight = [draining, recovering].filter((p): p is Promise<void> => p !== null);
+      let timedOut = false;
+      if (inFlight.length > 0) {
+        let timer: NodeJS.Timeout | undefined;
+        const settled = Promise.allSettled(inFlight).then(() => "done" as const);
+        const timeout = new Promise<"timeout">((resolve) => {
+          timer = setTimeout(() => resolve("timeout"), graceMs);
+        });
+        timedOut = (await Promise.race([settled, timeout])) === "timeout";
+        if (timer) clearTimeout(timer);
+      }
+      // Any claim still held (a wake still in flight after the grace period) goes
+      // back to pending. Its outcome is unknown, so the next process re-sends it
+      // with the same idempotency key and Paperclip deduplicates.
+      const releasedClaims = releaseOwnClaims(db, owner);
+      logger.info({ releasedClaims, timedOut }, "deferred queue released for shutdown");
+      return { releasedClaims, timedOut };
+    },
 
     async reconcileAfterRestart(): Promise<OrphanReport> {
       const report = reconcileOrphanedRuns(db, now().toISOString());
+      const reclaimed = reclaimAbandonedClaims(db, owner, now(), policy.maxAttempts);
+      if (reclaimed.released > 0 || reclaimed.dead > 0) {
+        logger.warn(
+          reclaimed,
+          "deferred wakes left claimed by the previous process reclaimed (same Idempotency-Key)",
+        );
+      }
       if (report.failedIngress.length > 0) {
         logger.warn(
           { runs: report.failedIngress },
@@ -438,6 +511,7 @@ export function createPresenceService(deps: {
     },
 
     async tick(): Promise<void> {
+      if (stopping) return;
       // Pick up interrupted runs left unrecovered (for example by a crash).
       if (listUnrecoveredRuns(db).length > 0) await recoverInterrupted();
 
@@ -469,7 +543,7 @@ export function createPresenceService(deps: {
       // first, so a stranded `waking` row is retried even when nothing else is pending.
       const anyAvailable = listNodeStatuses().some((n) => n.state === "available");
       if (!anyAvailable) return;
-      releaseStaleClaims(db, now());
+      releaseStaleClaims(db, now(), policy.leaseMs, policy.maxAttempts);
       if (countPendingDeferred(db) > 0) await drain();
     },
   };

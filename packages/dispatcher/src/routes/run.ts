@@ -4,10 +4,20 @@ import type { AppEnv } from "../app-types.js";
 import { bearerMatches } from "../auth.js";
 import { logDemoDecision } from "../demo.js";
 import { ParseError } from "../paperclip/parse.js";
-import { persistDeferred } from "../services/queue.js";
+import { expiryFor, getDeferredByRunId, persistDeferred } from "../services/queue.js";
 import { relayResponse } from "../services/relay.js";
 import { forwardToRunner, idempotencyKeyFor } from "../services/runner.js";
-import { finishRun, insertRunning, markDispatched, recordDecision } from "../services/runs.js";
+import {
+  finishRun,
+  getRun,
+  insertRunning,
+  markDispatched,
+  recordDecision,
+} from "../services/runs.js";
+
+function ttl(expiresAt: string | undefined): { expiresAt?: string } {
+  return expiresAt ? { expiresAt } : {};
+}
 
 export function runRoutes(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -64,6 +74,26 @@ export function runRoutes(): Hono<AppEnv> {
       labels: input.labels,
     };
 
+    // Idempotent ingress: a re-submit of a run Ebbgate already holds is answered
+    // from the stored state and never dispatched or queued a second time.
+    const queued = getDeferredByRunId(db, task.runId);
+    if (queued) {
+      if (queued.status === "pending" || queued.status === "waking") {
+        return c.json(
+          { status: "accepted", action: "defer", reason: queued.reason, duplicate: true },
+          202,
+        );
+      }
+      return c.json(
+        { error: "duplicate run", status: queued.status, reason: queued.terminal_reason },
+        409,
+      );
+    }
+    const existing = getRun(db, task.runId);
+    if (existing && existing.status !== "failed") {
+      return c.json({ error: "duplicate run", status: existing.status }, 409);
+    }
+
     // Invariant: private / unknown never go to cloud (enforced again in decide()).
     const nodes = presence.listNodeStatuses();
     const decision = decide(task, nodes, config);
@@ -80,7 +110,7 @@ export function runRoutes(): Hono<AppEnv> {
 
     if (decision.action === "defer") {
       // Persist first, then notify Paperclip / notifier (invariant 3).
-      persistDeferred(db, {
+      const persisted = persistDeferred(db, {
         runId: task.runId,
         ...(task.issueId ? { issueId: task.issueId } : {}),
         agentId: task.agentId,
@@ -89,7 +119,15 @@ export function runRoutes(): Hono<AppEnv> {
         reason: decision.reason,
         payload: body,
         createdAt: decidedAt,
+        ...ttl(expiryFor(decidedAt, config.agents[task.agentId]?.deferTtlHours)),
       });
+      if (!persisted.created) {
+        // A concurrent re-submit won the insert; it owns the annotations.
+        return c.json(
+          { status: "accepted", action: "defer", reason: persisted.row.reason, duplicate: true },
+          202,
+        );
+      }
 
       if (task.issueId) {
         try {
@@ -120,7 +158,7 @@ export function runRoutes(): Hono<AppEnv> {
         logger.error({ runId: task.runId }, "refusing cloud dispatch for private tier");
         return c.json({ error: "private tasks never run in the cloud" }, 500);
       }
-      insertRunning(db, {
+      const fresh = insertRunning(db, {
         runId: task.runId,
         ...(task.issueId ? { issueId: task.issueId } : {}),
         agentId: task.agentId,
@@ -129,6 +167,7 @@ export function runRoutes(): Hono<AppEnv> {
         startedAt: decidedAt,
         payload: body,
       });
+      if (!fresh) return c.json({ error: "duplicate run" }, 409);
       try {
         markDispatched(db, task.runId, now().toISOString());
         const result = await forwardToRunner(
@@ -156,7 +195,7 @@ export function runRoutes(): Hono<AppEnv> {
     if (!runnerUrl) {
       return c.json({ error: `no runner for node ${nodeId}` }, 500);
     }
-    insertRunning(db, {
+    const fresh = insertRunning(db, {
       runId: task.runId,
       ...(task.issueId ? { issueId: task.issueId } : {}),
       agentId: task.agentId,
@@ -167,6 +206,7 @@ export function runRoutes(): Hono<AppEnv> {
       startedAt: decidedAt,
       payload: body,
     });
+    if (!fresh) return c.json({ error: "duplicate run" }, 409);
     try {
       markDispatched(db, task.runId, now().toISOString());
       const result = await forwardToRunner(runnerUrl, body, c.req.raw.headers, fetchFn, {
