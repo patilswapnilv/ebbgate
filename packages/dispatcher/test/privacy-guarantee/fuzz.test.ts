@@ -87,7 +87,8 @@ describe("privacy guarantee: fuzzing /run", () => {
             for (const step of steps) {
               if (step.kind === "run") {
                 const res = await postRun(h, step.p);
-                expect([200, 202, 400, 500, 502]).toContain(res.status);
+                // 409: a re-submitted run id, deduplicated by the durable queue (#10).
+                expect([200, 202, 400, 409, 500, 502]).toContain(res.status);
               } else if (step.kind === "presence") {
                 await postPresence(h, step.node, { mode: step.mode, onBattery: step.onBattery });
               } else if (step.kind === "clock") {
