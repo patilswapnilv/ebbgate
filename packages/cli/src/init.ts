@@ -388,7 +388,7 @@ function renderSummary(a: {
     "",
     "Next steps:",
     "  1. ebbgate doctor                       check everything, with a fix for each problem",
-    "  2. start the dispatcher                 see README → Quickstart",
+    "  2. ebbgate serve                        start the dispatcher here (separate terminal)",
     `  3. ebbgate agent install --node ${firstNode}   presence agent on this Mac (launchd)`,
     "  4. ebbgate doctor                       all green",
   ];

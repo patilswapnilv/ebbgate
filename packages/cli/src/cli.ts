@@ -5,6 +5,7 @@ import { runDemoCommand } from "./demo.js";
 import { runDoctorCommand } from "./doctor.js";
 import { runDecisions, runStatusCommand, runWhy } from "./explain.js";
 import { runInit } from "./init.js";
+import { runServeCommand } from "./serve.js";
 
 async function main(argv: string[]): Promise<void> {
   // Run in the directory the user invoked from. Via `pnpm ebbgate ...` the script
@@ -49,6 +50,11 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "serve") {
+    // Stays up until SIGINT/SIGTERM; exit explicitly once shutdown has finished.
+    process.exit(await runServeCommand(argv.slice(1)));
+  }
+
   if (cmd === "admit") {
     process.exitCode = await runAdmit(argv.slice(1));
     return;
@@ -83,11 +89,15 @@ Usage:
                [--paperclip-url URL] [--model NAME] [--no-ollama]
                                  write ebbgate.yaml + .env (secrets, mode 600); offers to
                                  install Ollama and pull a small model (--yes accepts)
+  ebbgate serve [--config PATH] [--env PATH]
+                                 run the dispatcher here (loads ./ebbgate.yaml + ./.env)
   ebbgate doctor [--json] [--config PATH]
                                  check the setup; exit 1 on any failure
   ebbgate admit --node <id> | --remote [--agent <id>] [--private]
                                  admission probe (exit 0 admit, non-zero refuse)
-  ebbgate agent install [--node ID]   macOS launchd presence agent (uninstall|run)
+  ebbgate agent install [--node ID] [--dispatcher URL]
+                                 macOS launchd presence agent (uninstall|run);
+                                 dispatcher defaults to server.publicUrl in ebbgate.yaml
   ebbgate busy on|off|auto
   ebbgate status [--json]        presence, queue, and why each waiting task waits
   ebbgate why <taskId> [--json]  every routing decision for a task, and why

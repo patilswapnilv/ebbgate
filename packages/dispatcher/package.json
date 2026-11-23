@@ -17,13 +17,18 @@
       "ebbgate-source": "./src/demo-scenario.ts",
       "types": "./dist/demo-scenario.d.ts",
       "import": "./dist/demo-scenario.js"
+    },
+    "./start": {
+      "ebbgate-source": "./src/start.ts",
+      "types": "./dist/start.d.ts",
+      "import": "./dist/start.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/demo-scenario.ts --format esm --clean --external better-sqlite3 --external @ebbgate/core --external pino && tsc -p tsconfig.build.json && mkdir -p dist/migrations && cp src/db/migrations/*.sql dist/migrations/",
+    "build": "tsup src/index.ts src/demo-scenario.ts src/start.ts --format esm --clean --external better-sqlite3 --external @ebbgate/core --external pino && tsc -p tsconfig.build.json && mkdir -p dist/migrations && cp src/db/migrations/*.sql dist/migrations/",
     "typecheck": "tsc --noEmit -p .",
     "start": "node dist/index.js"
   },

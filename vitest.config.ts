@@ -10,6 +10,9 @@ export default defineConfig({
       "@ebbgate/dispatcher/demo": fileURLToPath(
         new URL("./packages/dispatcher/src/demo-scenario.ts", import.meta.url),
       ),
+      "@ebbgate/dispatcher/start": fileURLToPath(
+        new URL("./packages/dispatcher/src/start.ts", import.meta.url),
+      ),
       "@ebbgate/dispatcher": fileURLToPath(
         new URL("./packages/dispatcher/src/index.ts", import.meta.url),
       ),
